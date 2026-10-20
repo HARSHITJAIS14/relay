@@ -1,0 +1,1 @@
+{"protocolMajor":1,"protocolMinor":0,"type":"session.hello","messageId":"not-a-uuid","sessionId":"fixture-session","body":{"deviceName":"Test phone","capabilities":[]}}

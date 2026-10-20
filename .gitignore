@@ -1,0 +1,16 @@
+.build/
+.gradle/
+.tooling/
+build/
+local.properties
+*.xcuserstate
+.DS_Store
+captures/
+dist/
+*.dmg
+*.apk
+
+# Internal docs & planning
+implementation.md
+PLAN.md
+docs/
