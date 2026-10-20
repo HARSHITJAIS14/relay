@@ -25,7 +25,7 @@ with (contents / "Info.plist").open("wb") as stream:
         "CFBundleShortVersionString": "1.0.0",
         "LSMinimumSystemVersion": "13.0",
         "NSLocalNetworkUsageDescription": "Connect securely to your paired phone and transfer your selected files.",
-        "NSBonjourServices": ["_relay._tcp"],
+        "NSBonjourServices": ["_relay._tcp", "_companion._tcp"],
     }, stream)
 identities = subprocess.check_output(["security", "find-identity", "-p", "codesigning"], text=True)
 signer = "Companion Local Development" if '"Companion Local Development"' in identities else "-"

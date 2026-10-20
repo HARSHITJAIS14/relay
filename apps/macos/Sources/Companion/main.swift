@@ -23,9 +23,47 @@ struct CompanionApp: App {
                 .frame(minWidth: 460, minHeight: 560)
         }
         .defaultSize(width: 480, height: 600)
-        MenuBarExtra("Relay", systemImage: "link") {
+        .commands {
+            CommandGroup(replacing: .newItem) {
+                Button("Send File to Phone…") {
+                    let picker = NSOpenPanel()
+                    picker.canChooseDirectories = false
+                    picker.allowsMultipleSelection = false
+                    if picker.runModal() == .OK, let url = picker.url {
+                        Task { await server.enqueue(url) }
+                    }
+                }
+                .keyboardShortcut("o", modifiers: .command)
+
+                Button("Open Received Files") {
+                    NSWorkspace.shared.open(server.receiveFolder)
+                }
+                .keyboardShortcut("r", modifiers: [.command, .shift])
+            }
+            CommandMenu("Device") {
+                Button("📸 Take Photo from Phone") {
+                    Task { await server.requestCapture(mode: "photo") }
+                }
+                .keyboardShortcut("p", modifiers: [.command, .shift])
+
+                Button("📄 Scan Document from Phone") {
+                    Task { await server.requestCapture(mode: "scan") }
+                }
+                .keyboardShortcut("d", modifiers: [.command, .shift])
+            }
+        }
+
+        MenuBarExtra {
             CompanionView(server: server)
-                .frame(width: 460)
+                .frame(width: 460, height: 600)
+        } label: {
+            if let path = Bundle.main.path(forResource: "MenuBarIcon", ofType: "png"),
+               let nsImg = NSImage(contentsOfFile: path) {
+                let _ = nsImg.isTemplate = true
+                Image(nsImage: nsImg)
+            } else {
+                Image(systemName: "arrow.triangle.2.circlepath")
+            }
         }
         .menuBarExtraStyle(.window)
     }
@@ -286,7 +324,7 @@ struct CompanionView: View {
                     }
 
                     Divider()
-                    Toggle("Launch Companion at login", isOn: $server.launchAtLogin)
+                    Toggle("Launch Relay at login", isOn: $server.launchAtLogin)
                         .font(.subheadline)
                     Button("Forget phone", role: .destructive) { server.forget() }
                 }

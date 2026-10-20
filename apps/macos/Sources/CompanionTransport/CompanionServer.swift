@@ -148,7 +148,6 @@ public final class CompanionServer: ObservableObject {
             let gate = self.gate
             sec_protocol_options_set_verify_block(tls.securityProtocolOptions, makeVerifyBlock(gate: gate), DispatchQueue(label: "dev.companion.trust"))
             let listener = try NWListener(using: NWParameters(tls: tls), on: 18444)
-            listener.service = NWListener.Service(name: "Companion Mac", type: "_companion._tcp")
             listener.newConnectionHandler = { [weak self] connection in
                 Task { @MainActor in self?.accept(connection) }
             }
