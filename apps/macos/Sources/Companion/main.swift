@@ -61,6 +61,7 @@ struct CompanionApp: App {
                let nsImg = NSImage(contentsOfFile: path) {
                 let _ = nsImg.isTemplate = true
                 Image(nsImage: nsImg)
+                    .renderingMode(.template)
             } else {
                 Image(systemName: "arrow.triangle.2.circlepath")
             }
