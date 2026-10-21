@@ -57,6 +57,10 @@ class MainActivity : Activity() {
     private lateinit var textInput: EditText
     private lateinit var sendTextBtn: Button
     
+    private lateinit var companionFeaturesCard: LinearLayout
+    private lateinit var notifListenerBtn: Button
+    private lateinit var smsCallPermsBtn: Button
+
     private lateinit var inboxContainer: LinearLayout
     private lateinit var footerRow: LinearLayout
     
@@ -84,7 +88,10 @@ class MainActivity : Activity() {
             if (::client.isInitialized && client.hasInvitation) {
                 work {
                     if (!client.paired) client.pollPairing()
-                    else client.sendPending() ?: client.receiveNext() ?: client.pollRemoteClipboard(applyImmediately = client.autoApplyMacClipboard) ?: client.receiveNextInboxItem() ?: client.checkConnection()
+                    else {
+                        try { client.pollCompanionCommands() } catch (ignored: Exception) {}
+                        client.sendPending() ?: client.receiveNext() ?: client.pollRemoteClipboard(applyImmediately = client.autoApplyMacClipboard) ?: client.receiveNextInboxItem() ?: client.checkConnection()
+                    }
                 }
             }
             handler.postDelayed(this, 3000)
@@ -640,6 +647,72 @@ class MainActivity : Activity() {
         }
         root.addView(inboxContainer)
 
+        // 7.5. SMS & CALLS COMPANION CARD
+        companionFeaturesCard = createCard().apply {
+            addView(TextView(this@MainActivity).apply {
+                text = "SMS, Calls & Notifications"
+                textSize = 16f
+                setTypeface(null, Typeface.BOLD)
+                setTextColor(Color.parseColor("#172C29"))
+                setPadding(0, 0, 0, dp(2))
+            })
+            addView(TextView(this@MainActivity).apply {
+                text = "Mirror notifications with inline replies, read SMS, and get call alerts on Mac."
+                textSize = 13f
+                setTextColor(Color.parseColor("#586864"))
+                setPadding(0, 0, 0, dp(12))
+            })
+
+            notifListenerBtn = Button(this@MainActivity).apply {
+                textSize = 13f
+                setTypeface(null, Typeface.BOLD)
+                setTextColor(Color.parseColor("#172C29"))
+                setBackgroundResource(R.drawable.btn_secondary_pill)
+                setPadding(dp(12), dp(10), dp(12), dp(10))
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    bottomMargin = dp(8)
+                }
+                setOnClickListener {
+                    try {
+                        startActivity(Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS"))
+                    } catch (e: Exception) {
+                        Toast.makeText(this@MainActivity, "Open Settings > Notifications > Device & app notifications", Toast.LENGTH_LONG).show()
+                    }
+                }
+            }
+            addView(notifListenerBtn)
+
+            smsCallPermsBtn = Button(this@MainActivity).apply {
+                textSize = 13f
+                setTypeface(null, Typeface.BOLD)
+                setTextColor(Color.parseColor("#172C29"))
+                setBackgroundResource(R.drawable.btn_secondary_pill)
+                setPadding(dp(12), dp(10), dp(12), dp(10))
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                )
+                setOnClickListener {
+                    requestPermissions(
+                        arrayOf(
+                            android.Manifest.permission.READ_SMS,
+                            android.Manifest.permission.SEND_SMS,
+                            android.Manifest.permission.RECEIVE_SMS,
+                            android.Manifest.permission.READ_CONTACTS,
+                            android.Manifest.permission.READ_PHONE_STATE,
+                            android.Manifest.permission.READ_CALL_LOG
+                        ),
+                        102
+                    )
+                }
+            }
+            addView(smsCallPermsBtn)
+        }
+        root.addView(companionFeaturesCard)
+
         // 8. FOOTER WITH RECONNECT & FORGET
         footerRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -710,7 +783,7 @@ class MainActivity : Activity() {
             }
         }
         refineControls(root)
-        listOf(heroSendCard, clipboardCard, captureCard, textCard, footerRow).forEach { it.visibility = View.GONE }
+        listOf(heroSendCard, clipboardCard, captureCard, textCard, companionFeaturesCard, footerRow).forEach { it.visibility = View.GONE }
         scanQrBtn.isEnabled = false
         pair.isEnabled = false
         setContentView(ScrollView(this).apply {
@@ -782,6 +855,7 @@ class MainActivity : Activity() {
                 lastSyncSummaryView.text = last
             }
         }
+        updateCompanionFeatureButtons()
         coordinator.addListener(connectionListener)
         coordinator.triggerRefresh()
         handler.postDelayed(poll, 1000)
@@ -815,6 +889,23 @@ class MainActivity : Activity() {
         if (requestCode == 10 && resultCode == RESULT_OK) {
             data?.data?.let { uri -> work { client.stage(uri); client.sendPending() ?: "File queued" } }
         }
+    }
+
+    private fun updateCompanionFeatureButtons() {
+        if (!::notifListenerBtn.isInitialized || !::smsCallPermsBtn.isInitialized) return
+        val notifEnabled = RelayNotificationListenerService.isNotificationListenerEnabled(this)
+        notifListenerBtn.text = if (notifEnabled) "Notification Mirroring: Active ✓" else "Enable Notification Mirroring"
+        notifListenerBtn.setTextColor(if (notifEnabled) Color.parseColor("#15803D") else Color.parseColor("#172C29"))
+
+        val hasSms = SmsManagerHelper.hasSmsPermissions(this)
+        val hasPhone = checkSelfPermission(android.Manifest.permission.READ_PHONE_STATE) == PackageManager.PERMISSION_GRANTED
+        smsCallPermsBtn.text = if (hasSms && hasPhone) "SMS & Call Alerts: Granted ✓" else "Grant SMS & Call Permissions"
+        smsCallPermsBtn.setTextColor(if (hasSms && hasPhone) Color.parseColor("#15803D") else Color.parseColor("#172C29"))
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        updateCompanionFeatureButtons()
     }
 
     private fun refreshInboxUI() {
@@ -976,6 +1067,7 @@ class MainActivity : Activity() {
         captureCard.visibility = if (ready) View.VISIBLE else View.GONE
         clipboardCard.visibility = if (ready) View.VISIBLE else View.GONE
         textCard.visibility = if (ready) View.VISIBLE else View.GONE
+        companionFeaturesCard.visibility = if (ready) View.VISIBLE else View.GONE
         footerRow.visibility = if (ready) View.VISIBLE else View.GONE
     }
 

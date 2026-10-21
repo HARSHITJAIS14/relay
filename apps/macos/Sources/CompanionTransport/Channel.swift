@@ -101,18 +101,92 @@ final class Channel: @unchecked Sendable {
     }
 }
 
-struct WireMessage: Codable, Sendable {
-    var version = 1
-    var type: String
-    var token: String?
-    var name: String?
-    var id: String?
-    var size: Int64?
-    var sha256: String?
-    var code: String?
-    var message: String?
-    var text: String?
-    var seq: Int?
-    var timestamp: Int64?
-    var mode: String?
+public struct WireMessage: Codable, Sendable {
+    public var version = 1
+    public var type: String
+    public var token: String?
+    public var name: String?
+    public var id: String?
+    public var size: Int64?
+    public var sha256: String?
+    public var code: String?
+    public var message: String?
+    public var text: String?
+    public var seq: Int?
+    public var timestamp: Int64?
+    public var mode: String?
+    
+    // v1.4 additions for SMS, Calls, and Notifications
+    public var payload: String?
+    public var number: String?
+    public var callerName: String?
+    public var state: String?
+    public var callId: String?
+    public var replyId: String?
+    public var status: String?
+    public var threadId: Int64?
+    public var address: String?
+    public var packageName: String?
+    public var appName: String?
+    public var title: String?
+    public var canReply: Bool?
+    public var sendId: String?
+
+    public init(
+        version: Int = 1,
+        type: String,
+        token: String? = nil,
+        name: String? = nil,
+        id: String? = nil,
+        size: Int64? = nil,
+        sha256: String? = nil,
+        code: String? = nil,
+        message: String? = nil,
+        text: String? = nil,
+        seq: Int? = nil,
+        timestamp: Int64? = nil,
+        mode: String? = nil,
+        payload: String? = nil,
+        number: String? = nil,
+        callerName: String? = nil,
+        state: String? = nil,
+        callId: String? = nil,
+        replyId: String? = nil,
+        status: String? = nil,
+        threadId: Int64? = nil,
+        address: String? = nil,
+        packageName: String? = nil,
+        appName: String? = nil,
+        title: String? = nil,
+        canReply: Bool? = nil,
+        sendId: String? = nil
+    ) {
+        self.version = version
+        self.type = type
+        self.token = token
+        self.name = name
+        self.id = id
+        self.size = size
+        self.sha256 = sha256
+        self.code = code
+        self.message = message
+        self.text = text
+        self.seq = seq
+        self.timestamp = timestamp
+        self.mode = mode
+        self.payload = payload
+        self.number = number
+        self.callerName = callerName
+        self.state = state
+        self.callId = callId
+        self.replyId = replyId
+        self.status = status
+        self.threadId = threadId
+        self.address = address
+        self.packageName = packageName
+        self.appName = appName
+        self.title = title
+        self.canReply = canReply
+        self.sendId = sendId
+    }
 }

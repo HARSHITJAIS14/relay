@@ -126,6 +126,7 @@ class CompanionSyncService : Service() {
                         if (captureReq != null) {
                             showCaptureNotification(captureReq.id, captureReq.mode)
                         }
+                        client.pollCompanionCommands()
                         delayMs = 2000L
                     } else if (client.paired) {
                         coordinator.triggerRefresh()

@@ -4,6 +4,84 @@ import Network
 import Security
 import OSLog
 import ServiceManagement
+import UserNotifications
+
+public struct MirroredNotification: Identifiable, Sendable, Codable {
+    public let id: String
+    public let packageName: String
+    public let appName: String
+    public let title: String
+    public let text: String
+    public let timestamp: Int64
+    public let canReply: Bool
+
+    public init(id: String, packageName: String, appName: String, title: String, text: String, timestamp: Int64, canReply: Bool) {
+        self.id = id
+        self.packageName = packageName
+        self.appName = appName
+        self.title = title
+        self.text = text
+        self.timestamp = timestamp
+        self.canReply = canReply
+    }
+}
+
+public struct SmsThread: Identifiable, Sendable, Codable {
+    public var id: String { String(threadId) }
+    public let threadId: Int64
+    public let address: String
+    public let contactName: String
+    public let snippet: String
+    public let date: Int64
+    public let unreadCount: Int
+
+    public init(threadId: Int64, address: String, contactName: String, snippet: String, date: Int64, unreadCount: Int) {
+        self.threadId = threadId
+        self.address = address
+        self.contactName = contactName
+        self.snippet = snippet
+        self.date = date
+        self.unreadCount = unreadCount
+    }
+}
+
+public struct SmsMessage: Identifiable, Sendable, Codable {
+    public var idStr: String { String(id) }
+    public let id: Int64
+    public let threadId: Int64
+    public let address: String
+    public let body: String
+    public let date: Int64
+    public let type: Int?
+    public let isFromMe: Bool?
+
+    public init(id: Int64, threadId: Int64, address: String, body: String, date: Int64, type: Int? = nil, isFromMe: Bool? = nil) {
+        self.id = id
+        self.threadId = threadId
+        self.address = address
+        self.body = body
+        self.date = date
+        self.type = type
+        self.isFromMe = isFromMe
+    }
+}
+
+public struct ActiveCall: Identifiable, Sendable, Codable {
+    public var id: String { callId }
+    public let callId: String
+    public let number: String
+    public let callerName: String
+    public let state: String // "RINGING", "OFFHOOK", "IDLE", "MISSED"
+    public let timestamp: Int64
+
+    public init(callId: String, number: String, callerName: String, state: String, timestamp: Int64) {
+        self.callId = callId
+        self.number = number
+        self.callerName = callerName
+        self.state = state
+        self.timestamp = timestamp
+    }
+}
 
 private final class TrustGate: @unchecked Sendable {
     private let lock = NSLock()
@@ -72,6 +150,12 @@ public final class CompanionServer: ObservableObject {
     @Published public private(set) var lastTransfer = ""
     @Published public private(set) var fingerprint = ""
     @Published public private(set) var inbox: [InboxItem] = []
+    @Published public private(set) var notifications: [MirroredNotification] = []
+    @Published public private(set) var smsThreads: [SmsThread] = []
+    @Published public private(set) var activeThreadMessages: [SmsMessage] = []
+    @Published public var activeThreadId: Int64? = nil
+    @Published public private(set) var activeCall: ActiveCall? = nil
+    private var queuedCommands: [WireMessage] = []
     @Published public var clipboardSyncEnabled: Bool = true
     @Published public var launchAtLogin: Bool = false {
         didSet {
@@ -181,6 +265,7 @@ public final class CompanionServer: ObservableObject {
             if let current = clipboardMonitor.currentString, !current.isEmpty {
                 latestClipboardText = current
             }
+            UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in }
             clipboardMonitor.start()
             if trusted == nil, let ip = Self.detectLocalIP() {
                 createInvitation(host: ip)
@@ -310,6 +395,12 @@ public final class CompanionServer: ObservableObject {
             trusted = nil
             store = nil
             inbox = []
+            notifications = []
+            smsThreads = []
+            activeThreadMessages = []
+            activeThreadId = nil
+            activeCall = nil
+            queuedCommands = []
             peerName = nil
             reject()
             channels.values.forEach { $0.close() }
@@ -365,6 +456,75 @@ public final class CompanionServer: ObservableObject {
         pendingCaptureRequest = nil
         activeCaptureRequest = nil
         lastTransfer = "Capture cancelled."
+    }
+
+    private func postMacNotification(title: String, body: String) {
+        let center = UNUserNotificationCenter.current()
+        let content = UNMutableNotificationContent()
+        content.title = title
+        content.body = body
+        content.sound = .default
+        let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
+        center.add(request) { error in
+            if let error {
+                Logger(subsystem: "dev.companion", category: "notification").error("Failed to post notification: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    public func replyToNotification(id: String, text: String) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        let cmd = WireMessage(type: "notification.reply", id: id, text: trimmed, replyId: UUID().uuidString.lowercased())
+        queueCommand(cmd)
+    }
+
+    public func dismissNotification(id: String) {
+        notifications.removeAll { $0.id == id }
+        let cmd = WireMessage(type: "notification.dismiss", id: id)
+        queueCommand(cmd)
+    }
+
+    public func clearAllNotifications() {
+        notifications.removeAll()
+    }
+
+    public func requestSmsSync() {
+        queueCommand(WireMessage(type: "sms.sync_request"))
+    }
+
+    public func selectSmsThread(threadId: Int64) {
+        activeThreadId = threadId
+        queueCommand(WireMessage(type: "sms.thread_request", threadId: threadId))
+    }
+
+    public func sendSms(address: String, text: String) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, !address.isEmpty else { return }
+        let sendId = UUID().uuidString.lowercased()
+        let cmd = WireMessage(type: "sms.send", text: trimmed, threadId: activeThreadId, address: address, sendId: sendId)
+        queueCommand(cmd)
+
+        if let tid = activeThreadId {
+            let optimisticMsg = SmsMessage(
+                id: Int64(Date().timeIntervalSince1970 * 1000),
+                threadId: tid,
+                address: address,
+                body: trimmed,
+                date: Int64(Date().timeIntervalSince1970 * 1000),
+                type: 2,
+                isFromMe: true
+            )
+            activeThreadMessages.append(optimisticMsg)
+        }
+    }
+
+    public func dismissCall() {
+        activeCall = nil
+    }
+
+    private func queueCommand(_ cmd: WireMessage) {
+        queuedCommands.append(cmd)
     }
 
     private func accept(_ connection: NWConnection) {
@@ -503,6 +663,78 @@ public final class CompanionServer: ObservableObject {
                 activeCaptureRequest = nil
             }
             try await channel.sendMessage(WireMessage(type: "capture.receipt"))
+        case "notification.push":
+            let notif = MirroredNotification(
+                id: request.id ?? UUID().uuidString.lowercased(),
+                packageName: request.packageName ?? "",
+                appName: (request.appName?.isEmpty == false ? request.appName : request.packageName) ?? "App",
+                title: request.title ?? "",
+                text: request.text ?? "",
+                timestamp: request.timestamp ?? Int64(Date().timeIntervalSince1970 * 1000),
+                canReply: request.canReply ?? false
+            )
+            notifications.removeAll { $0.id == notif.id }
+            notifications.insert(notif, at: 0)
+            if notifications.count > 100 { notifications.removeLast() }
+            postMacNotification(title: "\(notif.appName): \(notif.title)", body: notif.text)
+            try await channel.sendMessage(WireMessage(type: "notification.receipt", id: notif.id))
+        case "notification.dismiss":
+            if let id = request.id {
+                notifications.removeAll { $0.id == id }
+            }
+            try await channel.sendMessage(WireMessage(type: "notification.receipt"))
+        case "notification.reply_ack":
+            lastTransfer = "Reply delivered to phone"
+            try await channel.sendMessage(WireMessage(type: "ok"))
+        case "sms.incoming":
+            let sender = (request.callerName?.isEmpty == false ? request.callerName : request.address) ?? "Unknown"
+            let body = request.text ?? ""
+            postMacNotification(title: "SMS from \(sender)", body: body)
+            queueCommand(WireMessage(type: "sms.sync_request"))
+            if let tid = activeThreadId {
+                queueCommand(WireMessage(type: "sms.thread_request", threadId: tid))
+            }
+            try await channel.sendMessage(WireMessage(type: "sms.receipt"))
+        case "sms.threads":
+            if let payload = request.payload, let data = payload.data(using: .utf8) {
+                if let threads = try? JSONDecoder().decode([SmsThread].self, from: data) {
+                    self.smsThreads = threads
+                }
+            }
+            try await channel.sendMessage(WireMessage(type: "sms.threads_receipt"))
+        case "sms.messages":
+            if let payload = request.payload, let data = payload.data(using: .utf8) {
+                if let messages = try? JSONDecoder().decode([SmsMessage].self, from: data) {
+                    self.activeThreadMessages = messages
+                }
+            }
+            try await channel.sendMessage(WireMessage(type: "sms.messages_receipt"))
+        case "sms.send_receipt":
+            lastTransfer = "SMS dispatched from phone"
+            try await channel.sendMessage(WireMessage(type: "ok"))
+        case "call.state":
+            let callState = request.state ?? "IDLE"
+            let caller = (request.callerName?.isEmpty == false ? request.callerName : request.number) ?? "Unknown Caller"
+            let number = request.number ?? ""
+            let callId = request.callId ?? UUID().uuidString.lowercased()
+            let timestamp = request.timestamp ?? Int64(Date().timeIntervalSince1970 * 1000)
+            if callState == "RINGING" {
+                activeCall = ActiveCall(callId: callId, number: number, callerName: caller, state: "RINGING", timestamp: timestamp)
+                postMacNotification(title: "Incoming Call", body: "\(caller) (\(number))")
+            } else if callState == "MISSED" {
+                activeCall = nil
+                postMacNotification(title: "Missed Call", body: "\(caller) (\(number))")
+            } else if callState == "IDLE" || callState == "OFFHOOK" {
+                activeCall = nil
+            }
+            try await channel.sendMessage(WireMessage(type: "call.receipt"))
+        case "command.poll":
+            if !queuedCommands.isEmpty {
+                let cmd = queuedCommands.removeFirst()
+                try await channel.sendMessage(cmd)
+            } else {
+                try await channel.sendMessage(WireMessage(type: "command.empty"))
+            }
         default: throw CompanionError.message("Unsupported operation.")
         }
     }

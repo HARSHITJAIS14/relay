@@ -42,6 +42,7 @@ class ConnectionCoordinator private constructor(context: Context) {
     private val workQueue = java.util.concurrent.ConcurrentLinkedQueue<() -> Unit>()
 
     private lateinit var discoveryManager: RelayDiscoveryManager
+    private val callMonitor = CallStateMonitor(appContext)
 
     companion object {
         private const val TAG = "ConnectionCoordinator"
@@ -73,6 +74,57 @@ class ConnectionCoordinator private constructor(context: Context) {
             }
         }
         registerNetworkCallback()
+        if (client.paired) {
+            callMonitor.start()
+        }
+    }
+
+    fun onNotificationPosted(notification: MirroredNotification) {
+        if (isConnected()) {
+            executor.execute {
+                try {
+                    client.sendNotification(notification)
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to send notification: ${e.message}")
+                }
+            }
+        }
+    }
+
+    fun onNotificationRemoved(id: String) {
+        if (isConnected()) {
+            executor.execute {
+                try {
+                    client.sendNotificationDismiss(id)
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to send notification dismiss: ${e.message}")
+                }
+            }
+        }
+    }
+
+    fun onIncomingSms(address: String, contactName: String?, body: String, timestamp: Long) {
+        if (isConnected()) {
+            executor.execute {
+                try {
+                    client.sendIncomingSms(address, contactName, body, timestamp)
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to send incoming SMS: ${e.message}")
+                }
+            }
+        }
+    }
+
+    fun onCallStateChanged(state: String, number: String, callerName: String?) {
+        if (isConnected()) {
+            executor.execute {
+                try {
+                    client.sendCallState(state, number, callerName)
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to send call state: ${e.message}")
+                }
+            }
+        }
     }
 
     fun isConnected(): Boolean = currentState == ConnectionState.CONNECTED

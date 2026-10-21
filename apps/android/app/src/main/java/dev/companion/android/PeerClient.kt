@@ -720,6 +720,127 @@ class PeerClient(private val context: Context) {
             false
         }
     }
+
+    fun sendNotification(notification: MirroredNotification) {
+        if (!paired) return
+        connect().use { channel ->
+            channel.send(json(
+                "type" to "notification.push",
+                "id" to notification.id,
+                "packageName" to notification.packageName,
+                "appName" to notification.appName,
+                "title" to notification.title,
+                "text" to notification.text,
+                "timestamp" to notification.timestamp,
+                "canReply" to notification.canReply
+            ))
+            val resp = channel.receive()
+            check(resp.getString("type") == "notification.receipt")
+        }
+    }
+
+    fun sendNotificationDismiss(id: String) {
+        if (!paired) return
+        connect().use { channel ->
+            channel.send(json("type" to "notification.dismiss", "id" to id))
+            channel.receive()
+        }
+    }
+
+    fun sendIncomingSms(address: String, contactName: String?, body: String, timestamp: Long) {
+        if (!paired) return
+        connect().use { channel ->
+            channel.send(json(
+                "type" to "sms.incoming",
+                "address" to address,
+                "contactName" to (contactName ?: address),
+                "text" to body,
+                "timestamp" to timestamp
+            ))
+            val resp = channel.receive()
+            check(resp.getString("type") == "sms.receipt")
+        }
+    }
+
+    fun sendCallState(state: String, number: String, callerName: String?) {
+        if (!paired) return
+        connect().use { channel ->
+            channel.send(json(
+                "type" to "call.state",
+                "state" to state,
+                "number" to number,
+                "callerName" to (callerName ?: number),
+                "timestamp" to System.currentTimeMillis()
+            ))
+            val resp = channel.receive()
+            check(resp.getString("type") == "call.receipt")
+        }
+    }
+
+    fun pollCompanionCommands() {
+        if (!paired) return
+        connect().use { channel ->
+            channel.send(json("type" to "command.poll"))
+            val response = channel.receive()
+            val cmdType = response.optString("type")
+            when (cmdType) {
+                "notification.reply" -> {
+                    val notifId = response.getString("id")
+                    val replyText = response.getString("text")
+                    val replyId = response.getString("replyId")
+                    val ok = RelayNotificationListenerService.replyToNotification(context, notifId, replyText)
+                    channel.send(json(
+                        "type" to "notification.reply_ack",
+                        "replyId" to replyId,
+                        "status" to (if (ok) "sent" else "failed")
+                    ))
+                    channel.receive()
+                }
+                "sms.send" -> {
+                    val dest = response.getString("address")
+                    val body = response.getString("text")
+                    val sendId = response.getString("sendId")
+                    val smsHelper = SmsManagerHelper(context)
+                    val ok = try {
+                        smsHelper.sendSms(dest, body)
+                    } catch (e: Exception) {
+                        false
+                    }
+                    channel.send(json(
+                        "type" to "sms.send_receipt",
+                        "sendId" to sendId,
+                        "status" to (if (ok) "sent" else "failed")
+                    ))
+                    channel.receive()
+                }
+                "sms.sync_request" -> {
+                    val smsHelper = SmsManagerHelper(context)
+                    val conversations = smsHelper.getConversations(limit = 30)
+                    val arr = org.json.JSONArray()
+                    conversations.forEach { arr.put(it.toJson()) }
+                    channel.send(json(
+                        "type" to "sms.threads",
+                        "payload" to arr.toString()
+                    ))
+                    channel.receive()
+                }
+                "sms.thread_request" -> {
+                    val threadId = response.getLong("threadId")
+                    val smsHelper = SmsManagerHelper(context)
+                    val messages = smsHelper.getThreadMessages(threadId, limit = 50)
+                    val arr = org.json.JSONArray()
+                    messages.forEach { arr.put(it.toJson()) }
+                    channel.send(json(
+                        "type" to "sms.messages",
+                        "threadId" to threadId,
+                        "payload" to arr.toString()
+                    ))
+                    channel.receive()
+                }
+                else -> {}
+            }
+        }
+    }
 }
 
 private class WireChannel(private val socket: SSLSocket) : Closeable {

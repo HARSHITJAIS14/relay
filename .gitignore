@@ -9,6 +9,7 @@ captures/
 dist/
 *.dmg
 *.apk
+SHA256SUMS.txt
 
 # Internal docs & planning
 implementation.md
