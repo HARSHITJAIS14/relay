@@ -38,6 +38,15 @@ class PeerClient(private val context: Context) {
     val pairingCode get() = preferences.getString("code", "") ?: ""
     val host get() = preferences.getString("host", "") ?: ""
     private val pin get() = preferences.getString("pin", "") ?: ""
+    var onTransferProgress: ((TransferProgress) -> Unit)? = null
+
+    private fun emitProgress(progress: TransferProgress) {
+        onTransferProgress?.invoke(progress)
+    }
+
+    var lastSyncSummary: String?
+        get() = preferences.getString("last_sync_summary", null)
+        set(value) { preferences.edit().putString("last_sync_summary", value).apply() }
 
     init {
         if (!keyStore.containsAlias(IDENTITY_ALIAS)) {
@@ -186,33 +195,59 @@ class PeerClient(private val context: Context) {
         val manifest = File(context.filesDir, "outbox/$pin").listFiles()?.filter { it.extension == "json" }?.sorted()?.firstOrNull()
             ?: return null
         val offer = JSONObject(manifest.readText())
-        val file = File(manifest.parentFile, "${offer.getString("id")}.data")
-        connect().use { channel ->
-            channel.send(offer)
-            var response = channel.receive()
-            if (response.getString("type") == "file.ready") {
-                val resumeOffset = response.optLong("size", 0L)
-                FileInputStream(file).use { input ->
-                    if (resumeOffset > 0 && resumeOffset < offer.getLong("size")) {
-                        var skipped = 0L
-                        while (skipped < resumeOffset) {
-                            val count = input.skip(resumeOffset - skipped)
-                            if (count <= 0) break
-                            skipped += count
+        val id = offer.getString("id")
+        val name = offer.getString("name")
+        val size = offer.getLong("size")
+        val file = File(manifest.parentFile, "$id.data")
+
+        emitProgress(TransferProgress(id, name, TransferProgress.Direction.SEND, 0L, size, TransferProgress.State.PREPARING))
+
+        try {
+            connect().use { channel ->
+                channel.send(offer)
+                var response = channel.receive()
+                if (response.getString("type") == "file.ready") {
+                    val resumeOffset = response.optLong("size", 0L)
+                    emitProgress(TransferProgress(id, name, TransferProgress.Direction.SEND, resumeOffset, size, TransferProgress.State.TRANSFERRING))
+                    FileInputStream(file).use { input ->
+                        if (resumeOffset > 0 && resumeOffset < size) {
+                            var skipped = 0L
+                            while (skipped < resumeOffset) {
+                                val count = input.skip(resumeOffset - skipped)
+                                if (count <= 0) break
+                                skipped += count
+                            }
+                        }
+                        val buffer = ByteArray(65536)
+                        var transferred = resumeOffset
+                        var lastEmit = System.currentTimeMillis()
+                        while (true) {
+                            val read = input.read(buffer)
+                            if (read <= 0) break
+                            channel.output.write(buffer, 0, read)
+                            transferred += read
+                            val now = System.currentTimeMillis()
+                            if (now - lastEmit >= 200 || transferred == size) {
+                                emitProgress(TransferProgress(id, name, TransferProgress.Direction.SEND, transferred, size, TransferProgress.State.TRANSFERRING))
+                                lastEmit = now
+                            }
                         }
                     }
-                    input.copyTo(channel.output, 65536)
+                    channel.output.flush()
+                    response = channel.receive()
                 }
-                channel.output.flush()
-                response = channel.receive()
+                check(response.getString("type") == "file.saved" &&
+                    response.getString("id") == id &&
+                    response.getString("sha256") == offer.getString("sha256")) { "Mac did not confirm a verified save" }
             }
-            check(response.getString("type") == "file.saved" &&
-                response.getString("id") == offer.getString("id") &&
-                response.getString("sha256") == offer.getString("sha256")) { "Mac did not confirm a verified save" }
+            check(manifest.delete()) { "Sent, but could not clear local queue" }
+            file.delete()
+            emitProgress(TransferProgress(id, name, TransferProgress.Direction.SEND, size, size, TransferProgress.State.COMPLETED))
+            return "Sent $name"
+        } catch (e: Exception) {
+            emitProgress(TransferProgress(id, name, TransferProgress.Direction.SEND, 0L, size, TransferProgress.State.FAILED, e.message))
+            throw e
         }
-        check(manifest.delete()) { "Sent, but could not clear local queue" }
-        file.delete()
-        return "Sent ${offer.getString("name")}"
     }
 
     fun sendText(text: String): String {
@@ -548,18 +583,30 @@ class PeerClient(private val context: Context) {
             }
             channel.send(json("type" to "file.ready", "id" to id, "size" to existingSize))
 
+            emitProgress(TransferProgress(id, name, TransferProgress.Direction.RECEIVE, existingSize, size, TransferProgress.State.TRANSFERRING))
+
             FileOutputStream(partial, true).use { file ->
                 var remaining = size - existingSize
+                var transferred = existingSize
+                var lastEmit = System.currentTimeMillis()
                 val buffer = ByteArray(65536)
                 while (remaining > 0) {
                     val count = channel.input.read(buffer, 0, minOf(buffer.size.toLong(), remaining).toInt())
                     if (count < 0) throw EOFException("Transfer interrupted")
                     file.write(buffer, 0, count)
                     remaining -= count
+                    transferred += count
+                    val now = System.currentTimeMillis()
+                    if (now - lastEmit >= 200 || transferred == size) {
+                        emitProgress(TransferProgress(id, name, TransferProgress.Direction.RECEIVE, transferred, size, TransferProgress.State.TRANSFERRING))
+                        lastEmit = now
+                    }
                 }
                 file.flush()
                 file.fd.sync()
             }
+
+            emitProgress(TransferProgress(id, name, TransferProgress.Direction.RECEIVE, size, size, TransferProgress.State.VERIFYING))
 
             val actualHash = MessageDigest.getInstance("SHA-256").let { md ->
                 FileInputStream(partial).use { input ->
@@ -574,6 +621,7 @@ class PeerClient(private val context: Context) {
             }
             check(actualHash == expected) {
                 partial.delete()
+                emitProgress(TransferProgress(id, name, TransferProgress.Direction.RECEIVE, 0L, size, TransferProgress.State.FAILED, "Verification failed"))
                 "File verification failed"
             }
 
@@ -598,16 +646,23 @@ class PeerClient(private val context: Context) {
                 partial.delete()
                 check(receipts.edit().putString(id, destination.toString()).commit())
                 channel.send(json("type" to "file.saved", "id" to id, "sha256" to expected))
+                emitProgress(TransferProgress(id, name, TransferProgress.Direction.RECEIVE, size, size, TransferProgress.State.COMPLETED))
                 "Saved $name in Downloads/Relay"
             } finally {
                 if (!published) {
                     context.contentResolver.delete(destination, null, null)
+                    emitProgress(TransferProgress(id, name, TransferProgress.Direction.RECEIVE, 0L, size, TransferProgress.State.FAILED, "Save failed"))
                 }
             }
         }
     }
 
-    private fun connect(): WireChannel {
+    val cachedHost get() = host
+    val cachedPort get() = preferences.getInt("port", 18444)
+
+    private fun connect(): WireChannel = connectTo(host, preferences.getInt("port", 18444))
+
+    private fun connectTo(targetHost: String, targetPort: Int, timeoutMs: Int = 10000): WireChannel {
         check(hasInvitation) { "Pair your Mac first" }
         val expectedPin = pin
         val managers = arrayOf<KeyManager>(object : X509ExtendedKeyManager() {
@@ -634,10 +689,36 @@ class PeerClient(private val context: Context) {
         try {
             socket.soTimeout = 30000
             socket.enabledProtocols = socket.supportedProtocols.filter { it == "TLSv1.2" || it == "TLSv1.3" }.toTypedArray()
-            socket.connect(InetSocketAddress(host, preferences.getInt("port", 18444)), 10000)
+            socket.connect(InetSocketAddress(targetHost, targetPort), timeoutMs)
             socket.startHandshake()
             return WireChannel(socket)
         } catch (error: Exception) { socket.close(); throw error }
+    }
+
+    /**
+     * Authenticates a candidate using mutual TLS and the saved certificate pin.
+     * Updates the saved host only if mTLS and session.check succeed.
+     * Rejects same-named services or rogue endpoints without touching stored settings.
+     */
+    fun verifyAndSaveCandidate(candidateHost: String, candidatePort: Int = 18444): Boolean {
+        if (!hasInvitation || candidateHost.isBlank()) return false
+        return try {
+            connectTo(candidateHost, candidatePort, 3000).use { channel ->
+                channel.send(json("type" to "session.check"))
+                val resp = channel.receive()
+                if (resp.optString("type") == "session.ready") {
+                    preferences.edit()
+                        .putString("host", candidateHost)
+                        .putInt("port", candidatePort)
+                        .apply()
+                    true
+                } else {
+                    false
+                }
+            }
+        } catch (e: Exception) {
+            false
+        }
     }
 }
 

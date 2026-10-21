@@ -106,6 +106,7 @@ public final class CompanionServer: ObservableObject {
     private var macClipboardSeq: Int = 1
     private var macClipboardTimestamp: Int64 = Int64(Date().timeIntervalSince1970 * 1000)
     private var latestClipboardText: String?
+    private var netService: NetService?
 
     public init() {
         let relayRoot = FileManager.default.homeDirectoryForCurrentUser
@@ -154,8 +155,11 @@ public final class CompanionServer: ObservableObject {
             listener.stateUpdateHandler = { [weak self] state in
                 Task { @MainActor in
                     switch state {
-                    case .ready: self?.status = self?.trusted == nil ? "Ready to pair" : "Waiting for phone"
-                    case .failed(let error): self?.status = "Connection unavailable: \(error.localizedDescription)"
+                    case .ready:
+                        self?.status = self?.trusted == nil ? "Ready to pair" : "Waiting for phone"
+                        self?.advertiseBonjour()
+                    case .failed(let error):
+                        self?.status = "Connection unavailable: \(error.localizedDescription)"
                     default: break
                     }
                 }
@@ -184,6 +188,39 @@ public final class CompanionServer: ObservableObject {
         } catch { status = error.localizedDescription }
     }
 
+    public func advertiseBonjour() {
+        stopBonjour()
+        let hostName = Host.current().localizedName ?? "Mac"
+        let service = NetService(domain: "local.", type: "_relay._tcp.", name: "Relay (\(hostName))", port: 18444)
+        if !fingerprint.isEmpty {
+            let txtData = NetService.data(fromTXTRecord: [
+                "v": "1".data(using: .utf8)!,
+                "id": fingerprint.data(using: .utf8)!
+            ])
+            service.setTXTRecord(txtData)
+        }
+        service.publish()
+        netService = service
+    }
+
+    public func stopBonjour() {
+        netService?.stop()
+        netService = nil
+    }
+
+    public func handleSleep() {
+        stopBonjour()
+        channels.values.forEach { $0.close() }
+        channels.removeAll()
+    }
+
+    public func handleWake() async {
+        advertiseBonjour()
+        if trusted == nil, let ip = Self.detectLocalIP() {
+            createInvitation(host: ip)
+        }
+    }
+
     public static func detectLocalIP() -> String? {
         var ifaddr: UnsafeMutablePointer<ifaddrs>?
         guard getifaddrs(&ifaddr) == 0, let first = ifaddr else { return nil }
@@ -206,6 +243,7 @@ public final class CompanionServer: ObservableObject {
     }
 
     public func stop() {
+        stopBonjour()
         listener?.cancel()
         listener = nil
         channels.values.forEach { $0.close() }

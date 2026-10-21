@@ -42,11 +42,17 @@ class CompanionSyncService : Service() {
         }
     }
 
+    private lateinit var coordinator: ConnectionCoordinator
+    private val stateListener = ConnectionStateListener { state, detail ->
+        updateNotification(state, detail)
+    }
+
     override fun onCreate() {
         super.onCreate()
-        client = PeerClient(applicationContext)
+        coordinator = ConnectionCoordinator.getInstance(applicationContext)
+        client = coordinator.client
         createNotificationChannel()
-        val notification = buildNotification()
+        val notification = buildNotification(coordinator.getState(), coordinator.getDetail())
 
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
@@ -60,6 +66,8 @@ class CompanionSyncService : Service() {
             } catch (ignored: Exception) {}
         }
 
+        coordinator.addListener(stateListener)
+        coordinator.triggerRefresh()
         startSyncLoop()
     }
 
@@ -74,6 +82,9 @@ class CompanionSyncService : Service() {
 
     override fun onDestroy() {
         running.set(false)
+        if (::coordinator.isInitialized) {
+            coordinator.removeListener(stateListener)
+        }
         executor.shutdownNow()
         super.onDestroy()
     }
@@ -106,7 +117,7 @@ class CompanionSyncService : Service() {
             var delayMs = 2000L
             while (running.get()) {
                 try {
-                    if (client.paired) {
+                    if (coordinator.isConnected()) {
                         client.pollRemoteClipboard(applyImmediately = client.autoApplyMacClipboard)
                         client.receiveNext()
                         client.receiveNextInboxItem()
@@ -116,12 +127,15 @@ class CompanionSyncService : Service() {
                             showCaptureNotification(captureReq.id, captureReq.mode)
                         }
                         delayMs = 2000L
+                    } else if (client.paired) {
+                        coordinator.triggerRefresh()
+                        delayMs = 4000L
                     } else {
                         delayMs = 5000L
                     }
                 } catch (e: Exception) {
-                    // Connection error or Mac temporarily unreachable; back off
-                    delayMs = 5000L
+                    coordinator.triggerRefresh()
+                    delayMs = 4000L
                 }
 
                 try {
@@ -194,7 +208,7 @@ class CompanionSyncService : Service() {
         }
     }
 
-    private fun buildNotification(): Notification {
+    private fun buildNotification(state: ConnectionState, detail: String): Notification {
         val launchIntent = Intent(this, MainActivity::class.java)
         val pendingLaunch = PendingIntent.getActivity(
             this,
@@ -233,6 +247,14 @@ class CompanionSyncService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
+        val statusText = when (state) {
+            ConnectionState.CONNECTED -> "Connected to Mac • Tap 'Sync Clip' to synchronize"
+            ConnectionState.LOOKING_FOR_MAC -> "Looking for Mac on local Wi-Fi… • Tap 'Sync Clip' to retry"
+            ConnectionState.CONNECTING -> "Connecting to Mac… • Tap 'Sync Clip' to synchronize"
+            ConnectionState.NEEDS_ATTENTION -> "$detail • Tap to open"
+            ConnectionState.NOT_PAIRED -> "Pair with your Mac to begin"
+        }
+
         val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             Notification.Builder(this, CHANNEL_ID)
         } else {
@@ -241,7 +263,7 @@ class CompanionSyncService : Service() {
         }
 
         builder.setContentTitle("Relay")
-            .setContentText("Connected to Mac • Tap 'Sync Clip' to synchronize")
+            .setContentText(statusText)
             .setSmallIcon(android.R.drawable.ic_menu_share)
             .setContentIntent(pendingLaunch)
             .addAction(
@@ -268,5 +290,10 @@ class CompanionSyncService : Service() {
             .setOngoing(true)
 
         return builder.build()
+    }
+
+    private fun updateNotification(state: ConnectionState, detail: String) {
+        val manager = getSystemService(NotificationManager::class.java) ?: return
+        manager.notify(NOTIFICATION_ID, buildNotification(state, detail))
     }
 }

@@ -8,7 +8,7 @@ Relay brings your Android into your Mac workflow. Send a file, grab a clipboard,
 share a link, or turn your phone into your Mac's camera and document scanner.
 Your devices talk directly over local Wi-Fi.
 
-[Download v1.1.0](https://github.com/HARSHITJAIS14/relay/releases/tag/v1.1.0) · [Get started](#get-started) · [Build from source](#build-from-source)
+[Download v1.2.0](https://github.com/HARSHITJAIS14/relay/releases/tag/v1.2.0) · [Get started](#get-started) · [Build from source](#build-from-source)
 
 </div>
 
@@ -36,17 +36,18 @@ QR scanning uses Google Play services; you can also paste a pairing invitation l
 
 ## Downloads & current status
 
-[Download v1.1.0](https://github.com/HARSHITJAIS14/relay/releases/tag/v1.1.0), including the refreshed Mac and Android interfaces.
+[Download v1.2.0](https://github.com/HARSHITJAIS14/relay/releases/tag/v1.2.0), featuring automatic local rediscovery, live transfer progress, and simplified daily controls.
 
 | Platform | Package |
 | --- | --- |
-| macOS (Apple Silicon) | [Relay-v1.1.0.dmg](https://github.com/HARSHITJAIS14/relay/releases/download/v1.1.0/Relay-v1.1.0.dmg) |
-| Android | [Relay-v1.1.0.apk](https://github.com/HARSHITJAIS14/relay/releases/download/v1.1.0/Relay-v1.1.0.apk) |
+| macOS (Apple Silicon) | [Relay-v1.2.0.dmg](https://github.com/HARSHITJAIS14/relay/releases/download/v1.2.0/Relay-v1.2.0.dmg) |
+| Android | [Relay-v1.2.0.apk](https://github.com/HARSHITJAIS14/relay/releases/download/v1.2.0/Relay-v1.2.0.apk) |
 
-This release passed Android runtime and mutual-TLS checks, saved-pairing reconnection,
-and file transfers in both directions on a real Android 16 phone. The live test harness
-can refresh a stale Mac IP address after verifying the existing certificate pin;
-automatic address discovery is not yet implemented in the app.
+### What's new in v1.2.0
+- **Automatic rediscovery & reconnection:** Mac advertises `_relay._tcp` via Bonjour; Android continuously rediscovers and strictly authenticates candidate peers via mutual TLS and pinned certificate fingerprint before updating saved endpoints. Handles Wi-Fi toggling, sleep/wake cycles, and IP changes seamlessly.
+- **Streaming transfer progress & recovery:** Streaming progress events with percentage, byte counters, and cryptographic verification status. Interrupted transfers automatically resume from byte offset.
+- **Simplified in-app dashboard:** Single primary full-width "Sync clipboard" button with the last sync result displayed beneath it. Directional overrides and preferences organized in expandable options, preserving the foreground notification's one-tap bidirectional sync action.
+- **Honest connection status:** Real-time connection feedback across the in-app status pill and notification card (`Connected`, `Looking for Mac…`, `Connecting…`, `Needs attention`, `Not paired`).
 
 Relay is an early project. Current limits are part of the deal:
 

@@ -22,6 +22,7 @@ class MainActivity : Activity() {
     private val executor = Executors.newSingleThreadExecutor()
     private val handler = Handler(Looper.getMainLooper())
     private val working = AtomicBoolean(false)
+    private lateinit var coordinator: ConnectionCoordinator
     private lateinit var client: PeerClient
     
     // UI Elements
@@ -35,10 +36,18 @@ class MainActivity : Activity() {
     
     private lateinit var heroSendCard: LinearLayout
     private lateinit var send: Button
+
+    private lateinit var transferCard: LinearLayout
+    private lateinit var transferTitle: TextView
+    private lateinit var transferStatus: TextView
+    private lateinit var transferFileName: TextView
+    private lateinit var transferProgressBar: ProgressBar
+    private lateinit var transferSummary: TextView
     
     private lateinit var clipboardCard: LinearLayout
     private lateinit var clipboardSnippet: TextView
     private lateinit var syncClipboardBtn: Button
+    private lateinit var lastSyncSummaryView: TextView
     private lateinit var getMacBtn: Button
     private lateinit var autoApplyCheck: CheckBox
     
@@ -52,6 +61,13 @@ class MainActivity : Activity() {
     private lateinit var footerRow: LinearLayout
     
     private var resumed = false
+    private var hideTransferRunnable: Runnable? = null
+
+    private val connectionListener = ConnectionStateListener { state, detail ->
+        handler.post {
+            updateConnectionStateUI(state, detail)
+        }
+    }
 
     private val clipListener = ClipboardManager.OnPrimaryClipChangedListener {
         if (resumed && ::client.isInitialized && client.paired) {
@@ -272,7 +288,71 @@ class MainActivity : Activity() {
         }
         root.addView(heroSendCard)
 
-        // 4. CONTINUOUS CLIPBOARD CARD (Refined Neutral Styling)
+        // 3.5. TRANSFER PROGRESS CARD
+        transferCard = createCard().apply {
+            visibility = View.GONE
+            val topRow = LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    bottomMargin = dp(6)
+                }
+            }
+
+            transferTitle = TextView(this@MainActivity).apply {
+                text = "Transferring…"
+                textSize = 14f
+                setTypeface(null, Typeface.BOLD)
+                setTextColor(Color.parseColor("#172C29"))
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            }
+            topRow.addView(transferTitle)
+
+            transferStatus = TextView(this@MainActivity).apply {
+                text = "0%"
+                textSize = 12f
+                setTypeface(null, Typeface.BOLD)
+                setTextColor(Color.parseColor("#245C50"))
+            }
+            topRow.addView(transferStatus)
+            addView(topRow)
+
+            transferFileName = TextView(this@MainActivity).apply {
+                text = ""
+                textSize = 13f
+                setTextColor(Color.parseColor("#374151"))
+                maxLines = 1
+                ellipsize = android.text.TextUtils.TruncateAt.MIDDLE
+                setPadding(0, 0, 0, dp(8))
+            }
+            addView(transferFileName)
+
+            transferProgressBar = ProgressBar(this@MainActivity, null, android.R.attr.progressBarStyleHorizontal).apply {
+                isIndeterminate = false
+                max = 100
+                progress = 0
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    dp(8)
+                ).apply {
+                    bottomMargin = dp(6)
+                }
+            }
+            addView(transferProgressBar)
+
+            transferSummary = TextView(this@MainActivity).apply {
+                text = ""
+                textSize = 11f
+                setTextColor(Color.parseColor("#6B7280"))
+            }
+            addView(transferSummary)
+        }
+        root.addView(transferCard)
+
+        // 4. CONTINUOUS CLIPBOARD CARD (Simplified Primary Sync + Last Result + Secondary Options)
         clipboardCard = createCard().apply {
             addView(TextView(this@MainActivity).apply {
                 text = "Clipboard"
@@ -304,33 +384,69 @@ class MainActivity : Activity() {
             }
             addView(clipboardSnippet)
 
-            val clipActionRow = LinearLayout(this@MainActivity).apply {
-                orientation = LinearLayout.HORIZONTAL
+            syncClipboardBtn = Button(this@MainActivity).apply {
+                text = "Sync clipboard"
+                textSize = 14f
+                setTypeface(null, Typeface.BOLD)
+                setTextColor(Color.WHITE)
+                setBackgroundResource(R.drawable.btn_primary_black)
+                setPadding(dp(16), dp(13), dp(16), dp(13))
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT
-                )
-            }
-
-            syncClipboardBtn = Button(this@MainActivity).apply {
-                text = "Sync clipboard"
-                textSize = 13f
-                setTypeface(null, Typeface.BOLD)
-                setTextColor(Color.parseColor("#172C29"))
-                setBackgroundResource(R.drawable.btn_secondary_pill)
-                setPadding(dp(12), dp(10), dp(12), dp(10))
-                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
-                    marginEnd = dp(8)
+                ).apply {
+                    bottomMargin = dp(8)
                 }
                 setOnClickListener {
                     work {
                         val res = client.syncClipboardSmart()
                         updateClipboardSnippetUI()
+                        client.lastSyncSummary = res
+                        handler.post { lastSyncSummaryView.text = res }
                         res
                     }
                 }
             }
-            clipActionRow.addView(syncClipboardBtn)
+            addView(syncClipboardBtn)
+
+            lastSyncSummaryView = TextView(this@MainActivity).apply {
+                val last = if (::client.isInitialized) client.lastSyncSummary else null
+                text = last ?: "Tap to synchronize with Mac clipboard"
+                textSize = 12f
+                setTextColor(Color.parseColor("#586864"))
+                gravity = Gravity.CENTER_HORIZONTAL
+                setPadding(0, dp(2), 0, dp(8))
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                )
+            }
+            addView(lastSyncSummaryView)
+
+            val optionsContainer = LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.VERTICAL
+                visibility = View.GONE
+                setPadding(0, dp(4), 0, 0)
+            }
+
+            val toggleOptionsBtn = TextView(this@MainActivity).apply {
+                text = "Options & overrides ▾"
+                textSize = 12f
+                setTypeface(null, Typeface.BOLD)
+                setTextColor(Color.parseColor("#4B5563"))
+                gravity = Gravity.CENTER_HORIZONTAL
+                setPadding(dp(8), dp(6), dp(8), dp(6))
+                setOnClickListener {
+                    if (optionsContainer.visibility == View.VISIBLE) {
+                        optionsContainer.visibility = View.GONE
+                        text = "Options & overrides ▾"
+                    } else {
+                        optionsContainer.visibility = View.VISIBLE
+                        text = "Options & overrides ▴"
+                    }
+                }
+            }
+            addView(toggleOptionsBtn)
 
             getMacBtn = Button(this@MainActivity).apply {
                 text = "Get from Mac"
@@ -339,18 +455,26 @@ class MainActivity : Activity() {
                 setTextColor(Color.parseColor("#172C29"))
                 setBackgroundResource(R.drawable.btn_secondary_pill)
                 setPadding(dp(12), dp(10), dp(12), dp(10))
-                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    topMargin = dp(6)
+                    bottomMargin = dp(8)
+                }
                 setOnClickListener {
                     work {
                         val text = client.applyLatestMacClipboard()
                         updateClipboardSnippetUI()
-                        if (text.isNullOrBlank()) "No new clipboard item from Mac"
+                        val res = if (text.isNullOrBlank()) "No new clipboard item from Mac"
                         else "Pasted from Mac: ${text.take(25)}"
+                        client.lastSyncSummary = res
+                        handler.post { lastSyncSummaryView.text = res }
+                        res
                     }
                 }
             }
-            clipActionRow.addView(getMacBtn)
-            addView(clipActionRow)
+            optionsContainer.addView(getMacBtn)
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 val addTileBtn = Button(this@MainActivity).apply {
@@ -363,7 +487,7 @@ class MainActivity : Activity() {
                         LinearLayout.LayoutParams.MATCH_PARENT,
                         LinearLayout.LayoutParams.WRAP_CONTENT
                     ).apply {
-                        topMargin = dp(8)
+                        bottomMargin = dp(8)
                     }
                     setOnClickListener {
                         try {
@@ -379,7 +503,7 @@ class MainActivity : Activity() {
                         }
                     }
                 }
-                addView(addTileBtn)
+                optionsContainer.addView(addTileBtn)
             }
 
             autoApplyCheck = CheckBox(this@MainActivity).apply {
@@ -389,16 +513,15 @@ class MainActivity : Activity() {
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT
-                ).apply {
-                    topMargin = dp(6)
-                }
+                )
                 setOnCheckedChangeListener { _, isChecked ->
                     if (::client.isInitialized) {
                         client.autoApplyMacClipboard = isChecked
                     }
                 }
             }
-            addView(autoApplyCheck)
+            optionsContainer.addView(autoApplyCheck)
+            addView(optionsContainer)
         }
         root.addView(clipboardCard)
 
@@ -534,6 +657,7 @@ class MainActivity : Activity() {
                 marginEnd = dp(8)
             }
             setOnClickListener {
+                coordinator.triggerRefresh()
                 work {
                     if (client.paired) client.sendPending() ?: client.receiveNext() ?: client.pollRemoteClipboard() ?: client.receiveNextInboxItem() ?: client.checkConnection()
                     else client.pollPairing()
@@ -617,11 +741,16 @@ class MainActivity : Activity() {
             }
         }
 
+        coordinator = ConnectionCoordinator.getInstance(applicationContext)
+        client = coordinator.client
+        client.onTransferProgress = { progress ->
+            handler.post { renderTransferProgress(progress) }
+        }
+
         work {
-            client = PeerClient(applicationContext)
             if (client.paired) {
                 CompanionSyncService.start(applicationContext)
-                "Mac paired"
+                "Connected to Mac"
             } else {
                 "Pair your Mac once to get started."
             }
@@ -647,6 +776,14 @@ class MainActivity : Activity() {
         clipboard.addPrimaryClipChangedListener(clipListener)
         updateClipboardSnippetUI()
         refreshInboxUI()
+        if (::client.isInitialized) {
+            val last = client.lastSyncSummary
+            if (last != null) {
+                lastSyncSummaryView.text = last
+            }
+        }
+        coordinator.addListener(connectionListener)
+        coordinator.triggerRefresh()
         handler.postDelayed(poll, 1000)
 
         if (::client.isInitialized && client.paired) {
@@ -661,6 +798,7 @@ class MainActivity : Activity() {
         resumed = false
         val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         clipboard.removePrimaryClipChangedListener(clipListener)
+        coordinator.removeListener(connectionListener)
         handler.removeCallbacks(poll)
         super.onPause()
     }
@@ -800,6 +938,103 @@ class MainActivity : Activity() {
         inboxContainer.addView(card)
     }
 
+    private fun updateConnectionStateUI(state: ConnectionState, detail: String) {
+        if (isDestroyed) return
+        when (state) {
+            ConnectionState.CONNECTED -> {
+                statusPill.text = "Connected"
+                statusPill.setBackgroundResource(R.drawable.bg_pill_connected)
+                statusPill.setTextColor(Color.parseColor("#15803D"))
+            }
+            ConnectionState.LOOKING_FOR_MAC -> {
+                statusPill.text = "Looking for Mac…"
+                statusPill.setBackgroundResource(R.drawable.bg_pill_disconnected)
+                statusPill.setTextColor(Color.parseColor("#D97706"))
+            }
+            ConnectionState.CONNECTING -> {
+                statusPill.text = "Connecting…"
+                statusPill.setBackgroundResource(R.drawable.bg_pill_disconnected)
+                statusPill.setTextColor(Color.parseColor("#2563EB"))
+            }
+            ConnectionState.NEEDS_ATTENTION -> {
+                statusPill.text = "Needs attention"
+                statusPill.setBackgroundResource(R.drawable.bg_pill_disconnected)
+                statusPill.setTextColor(Color.parseColor("#DC2626"))
+            }
+            ConnectionState.NOT_PAIRED -> {
+                statusPill.text = "Not paired"
+                statusPill.setBackgroundResource(R.drawable.bg_pill_disconnected)
+                statusPill.setTextColor(Color.parseColor("#64748B"))
+            }
+        }
+        if (activityStatus.text.startsWith("Starting") || activityStatus.text.startsWith("Connected") || activityStatus.text.startsWith("Looking") || activityStatus.text.startsWith("Mac")) {
+            activityStatus.text = detail
+        }
+        val ready = if (::client.isInitialized) client.paired else false
+        pairingCard.visibility = if (ready) View.GONE else View.VISIBLE
+        heroSendCard.visibility = if (ready) View.VISIBLE else View.GONE
+        captureCard.visibility = if (ready) View.VISIBLE else View.GONE
+        clipboardCard.visibility = if (ready) View.VISIBLE else View.GONE
+        textCard.visibility = if (ready) View.VISIBLE else View.GONE
+        footerRow.visibility = if (ready) View.VISIBLE else View.GONE
+    }
+
+    private fun renderTransferProgress(p: TransferProgress) {
+        hideTransferRunnable?.let { handler.removeCallbacks(it) }
+        transferCard.visibility = View.VISIBLE
+        transferFileName.text = p.name
+
+        val isSend = p.direction == TransferProgress.Direction.SEND
+        val dirLabel = if (isSend) "Sending to Mac" else "Receiving from Mac"
+
+        when (p.state) {
+            TransferProgress.State.PREPARING -> {
+                transferTitle.text = "$dirLabel…"
+                transferStatus.text = "Preparing"
+                transferStatus.setTextColor(Color.parseColor("#D97706"))
+                transferProgressBar.isIndeterminate = true
+                transferSummary.text = p.formattedSummary
+            }
+            TransferProgress.State.TRANSFERRING -> {
+                transferTitle.text = dirLabel
+                val pct = p.percent
+                transferStatus.text = "$pct%"
+                transferStatus.setTextColor(Color.parseColor("#245C50"))
+                transferProgressBar.isIndeterminate = false
+                transferProgressBar.progress = pct
+                transferSummary.text = p.formattedSummary
+            }
+            TransferProgress.State.VERIFYING -> {
+                transferTitle.text = "Verifying integrity…"
+                transferStatus.text = "SHA-256"
+                transferStatus.setTextColor(Color.parseColor("#2563EB"))
+                transferProgressBar.isIndeterminate = true
+                transferSummary.text = "Checking cryptographic checksum before save"
+            }
+            TransferProgress.State.COMPLETED -> {
+                transferTitle.text = if (isSend) "File sent ✓" else "File received ✓"
+                transferStatus.text = "100%"
+                transferStatus.setTextColor(Color.parseColor("#15803D"))
+                transferProgressBar.isIndeterminate = false
+                transferProgressBar.progress = 100
+                transferSummary.text = if (isSend) "Sent to Mac" else "Saved in Downloads/Relay"
+                val r = Runnable { transferCard.visibility = View.GONE }
+                hideTransferRunnable = r
+                handler.postDelayed(r, 4000)
+            }
+            TransferProgress.State.FAILED -> {
+                transferTitle.text = "Transfer interrupted"
+                transferStatus.text = "Paused"
+                transferStatus.setTextColor(Color.parseColor("#DC2626"))
+                transferProgressBar.isIndeterminate = false
+                transferSummary.text = "${p.error ?: "Connection interrupted"} • Will resume automatically"
+                val r = Runnable { transferCard.visibility = View.GONE }
+                hideTransferRunnable = r
+                handler.postDelayed(r, 6000)
+            }
+        }
+    }
+
     private fun work(action: () -> String) {
         if (!working.compareAndSet(false, true)) return
         executor.execute {
@@ -813,25 +1048,14 @@ class MainActivity : Activity() {
                     scanQrBtn.isEnabled = true
                     pair.isEnabled = true
                     autoApplyCheck.isChecked = client.autoApplyMacClipboard
-                    val ready = client.paired
-                    if (ready) {
-                        statusPill.text = "Mac paired"
-                        statusPill.setBackgroundResource(R.drawable.bg_pill_connected)
-                        statusPill.setTextColor(Color.parseColor("#15803D"))
-                    } else {
-                        statusPill.text = "Not paired"
-                        statusPill.setBackgroundResource(R.drawable.bg_pill_disconnected)
-                        statusPill.setTextColor(Color.parseColor("#64748B"))
+                    val last = client.lastSyncSummary
+                    if (last != null) {
+                        lastSyncSummaryView.text = last
                     }
-
-                    pairingCard.visibility = if (ready) View.GONE else View.VISIBLE
-                    heroSendCard.visibility = if (ready) View.VISIBLE else View.GONE
-                    captureCard.visibility = if (ready) View.VISIBLE else View.GONE
-                    clipboardCard.visibility = if (ready) View.VISIBLE else View.GONE
-                    textCard.visibility = if (ready) View.VISIBLE else View.GONE
-                    footerRow.visibility = if (ready) View.VISIBLE else View.GONE
-                    
-                    if (!ready) {
+                    if (::coordinator.isInitialized) {
+                        updateConnectionStateUI(coordinator.getState(), coordinator.getDetail())
+                    }
+                    if (!client.paired) {
                         pairingCode.text = client.pairingCode
                     }
                     refreshInboxUI()

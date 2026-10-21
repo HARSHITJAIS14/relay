@@ -12,6 +12,16 @@ struct CompanionApp: App {
     init() {
         let s = CompanionServer()
         _server = StateObject(wrappedValue: s)
+        NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.willSleepNotification, object: nil, queue: .main) { _ in
+            Task { @MainActor in
+                s.handleSleep()
+            }
+        }
+        NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { _ in
+            Task { @MainActor in
+                await s.handleWake()
+            }
+        }
         Task { @MainActor in
             await s.start()
         }
