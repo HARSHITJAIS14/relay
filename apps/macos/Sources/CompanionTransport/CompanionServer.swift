@@ -43,6 +43,21 @@ public struct SmsThread: Identifiable, Sendable, Codable {
         self.date = date
         self.unreadCount = unreadCount
     }
+
+    enum CodingKeys: String, CodingKey {
+        case threadId, address, contactName, snippet, date, unreadCount
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.threadId = try container.decodeIfPresent(Int64.self, forKey: .threadId) ?? 0
+        let addr = try container.decodeIfPresent(String.self, forKey: .address) ?? ""
+        self.address = addr
+        self.contactName = try container.decodeIfPresent(String.self, forKey: .contactName) ?? (addr.isEmpty ? "Unknown" : addr)
+        self.snippet = try container.decodeIfPresent(String.self, forKey: .snippet) ?? ""
+        self.date = try container.decodeIfPresent(Int64.self, forKey: .date) ?? 0
+        self.unreadCount = try container.decodeIfPresent(Int.self, forKey: .unreadCount) ?? 0
+    }
 }
 
 public struct SmsMessage: Identifiable, Sendable, Codable {
@@ -63,6 +78,21 @@ public struct SmsMessage: Identifiable, Sendable, Codable {
         self.date = date
         self.type = type
         self.isFromMe = isFromMe
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id, threadId, address, body, date, type, isFromMe
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try container.decodeIfPresent(Int64.self, forKey: .id) ?? 0
+        self.threadId = try container.decodeIfPresent(Int64.self, forKey: .threadId) ?? 0
+        self.address = try container.decodeIfPresent(String.self, forKey: .address) ?? ""
+        self.body = try container.decodeIfPresent(String.self, forKey: .body) ?? ""
+        self.date = try container.decodeIfPresent(Int64.self, forKey: .date) ?? 0
+        self.type = try container.decodeIfPresent(Int.self, forKey: .type)
+        self.isFromMe = try container.decodeIfPresent(Bool.self, forKey: .isFromMe)
     }
 }
 
@@ -697,15 +727,23 @@ public final class CompanionServer: ObservableObject {
             try await channel.sendMessage(WireMessage(type: "sms.receipt"))
         case "sms.threads":
             if let payload = request.payload, let data = payload.data(using: .utf8) {
-                if let threads = try? JSONDecoder().decode([SmsThread].self, from: data) {
+                do {
+                    let threads = try JSONDecoder().decode([SmsThread].self, from: data)
                     self.smsThreads = threads
+                    Logger(subsystem: "dev.companion", category: "sms").info("Updated \(threads.count) SMS threads")
+                } catch {
+                    Logger(subsystem: "dev.companion", category: "sms").error("Failed to decode SMS threads: \(error)")
                 }
             }
             try await channel.sendMessage(WireMessage(type: "sms.threads_receipt"))
         case "sms.messages":
             if let payload = request.payload, let data = payload.data(using: .utf8) {
-                if let messages = try? JSONDecoder().decode([SmsMessage].self, from: data) {
+                do {
+                    let messages = try JSONDecoder().decode([SmsMessage].self, from: data)
                     self.activeThreadMessages = messages
+                    Logger(subsystem: "dev.companion", category: "sms").info("Updated \(messages.count) SMS messages")
+                } catch {
+                    Logger(subsystem: "dev.companion", category: "sms").error("Failed to decode SMS messages: \(error)")
                 }
             }
             try await channel.sendMessage(WireMessage(type: "sms.messages_receipt"))
@@ -732,6 +770,44 @@ public final class CompanionServer: ObservableObject {
             if !queuedCommands.isEmpty {
                 let cmd = queuedCommands.removeFirst()
                 try await channel.sendMessage(cmd)
+
+                if cmd.type == "sms.sync_request" {
+                    let resp = try await channel.receiveMessage()
+                    if resp.type == "sms.threads", let payload = resp.payload, let data = payload.data(using: .utf8) {
+                        do {
+                            let threads = try JSONDecoder().decode([SmsThread].self, from: data)
+                            self.smsThreads = threads
+                            Logger(subsystem: "dev.companion", category: "sms").info("Synchronously updated \(threads.count) SMS threads")
+                        } catch {
+                            Logger(subsystem: "dev.companion", category: "sms").error("Failed to decode SMS threads: \(error)")
+                        }
+                    }
+                    try await channel.sendMessage(WireMessage(type: "sms.threads_receipt"))
+                } else if cmd.type == "sms.thread_request" {
+                    let resp = try await channel.receiveMessage()
+                    if resp.type == "sms.messages", let payload = resp.payload, let data = payload.data(using: .utf8) {
+                        do {
+                            let messages = try JSONDecoder().decode([SmsMessage].self, from: data)
+                            self.activeThreadMessages = messages
+                            Logger(subsystem: "dev.companion", category: "sms").info("Synchronously updated \(messages.count) SMS messages")
+                        } catch {
+                            Logger(subsystem: "dev.companion", category: "sms").error("Failed to decode SMS messages: \(error)")
+                        }
+                    }
+                    try await channel.sendMessage(WireMessage(type: "sms.messages_receipt"))
+                } else if cmd.type == "sms.send" {
+                    let receipt = try await channel.receiveMessage()
+                    if receipt.type == "sms.send_receipt" {
+                        lastTransfer = "SMS dispatched from phone"
+                    }
+                    try await channel.sendMessage(WireMessage(type: "ok"))
+                } else if cmd.type == "notification.reply" {
+                    let receipt = try await channel.receiveMessage()
+                    if receipt.type == "notification.reply_ack" {
+                        lastTransfer = "Reply delivered to phone"
+                    }
+                    try await channel.sendMessage(WireMessage(type: "ok"))
+                }
             } else {
                 try await channel.sendMessage(WireMessage(type: "command.empty"))
             }

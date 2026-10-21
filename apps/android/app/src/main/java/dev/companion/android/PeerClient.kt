@@ -10,6 +10,7 @@ import android.os.Looper
 import android.provider.MediaStore
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
+import android.util.Log
 import org.json.JSONObject
 import java.io.*
 import java.net.InetSocketAddress
@@ -22,6 +23,7 @@ import java.util.UUID
 import javax.net.ssl.*
 import javax.security.auth.x500.X500Principal
 
+private const val TAG = "PeerClient"
 private const val IDENTITY_ALIAS = "companion-phone-v2"
 private const val MAX_FILE = 100L * 1024 * 1024
 internal fun sha256(bytes: ByteArray) = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
@@ -814,28 +816,34 @@ class PeerClient(private val context: Context) {
                     channel.receive()
                 }
                 "sms.sync_request" -> {
+                    Log.i(TAG, "Received sms.sync_request from Mac")
                     val smsHelper = SmsManagerHelper(context)
-                    val conversations = smsHelper.getConversations(limit = 30)
+                    val conversations = smsHelper.getConversations(limit = 35)
                     val arr = org.json.JSONArray()
                     conversations.forEach { arr.put(it.toJson()) }
+                    Log.i(TAG, "Sending ${conversations.size} SMS conversations (${arr.toString().length} chars) to Mac")
                     channel.send(json(
                         "type" to "sms.threads",
                         "payload" to arr.toString()
                     ))
-                    channel.receive()
+                    val ack = channel.receive()
+                    Log.i(TAG, "Mac acknowledged threads receipt: ${ack.optString("type")}")
                 }
                 "sms.thread_request" -> {
                     val threadId = response.getLong("threadId")
+                    Log.i(TAG, "Received sms.thread_request for thread $threadId from Mac")
                     val smsHelper = SmsManagerHelper(context)
                     val messages = smsHelper.getThreadMessages(threadId, limit = 50)
                     val arr = org.json.JSONArray()
                     messages.forEach { arr.put(it.toJson()) }
+                    Log.i(TAG, "Sending ${messages.size} messages for thread $threadId to Mac")
                     channel.send(json(
                         "type" to "sms.messages",
                         "threadId" to threadId,
                         "payload" to arr.toString()
                     ))
-                    channel.receive()
+                    val ack = channel.receive()
+                    Log.i(TAG, "Mac acknowledged messages receipt: ${ack.optString("type")}")
                 }
                 else -> {}
             }

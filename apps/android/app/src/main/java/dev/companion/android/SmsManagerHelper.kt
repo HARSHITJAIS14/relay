@@ -23,9 +23,9 @@ data class SmsConversation(
 ) {
     fun toJson(): JSONObject = JSONObject().apply {
         put("threadId", threadId)
-        put("address", address)
-        put("contactName", contactName ?: address)
-        put("snippet", snippet)
+        put("address", address ?: "")
+        put("contactName", if (!contactName.isNullOrBlank()) contactName else (address ?: "Unknown"))
+        put("snippet", snippet ?: "")
         put("date", date)
         put("unreadCount", unreadCount)
     }
@@ -42,8 +42,8 @@ data class SmsMessageItem(
     fun toJson(): JSONObject = JSONObject().apply {
         put("id", id)
         put("threadId", threadId)
-        put("address", address)
-        put("body", body)
+        put("address", address ?: "")
+        put("body", body ?: "")
         put("date", date)
         put("type", type)
         put("isFromMe", type == Telephony.Sms.MESSAGE_TYPE_SENT)
@@ -61,10 +61,15 @@ class SmsManagerHelper(private val context: Context) {
     }
 
     fun resolveContactName(phoneNumber: String): String? {
+        val trimmed = phoneNumber.trim()
+        if (trimmed.isEmpty()) return null
+        if (!trimmed.any { it.isDigit() }) {
+            return trimmed
+        }
         if (context.checkSelfPermission(android.Manifest.permission.READ_CONTACTS) != PackageManager.PERMISSION_GRANTED) {
             return null
         }
-        val uri = Uri.withAppendedPath(ContactsContract.PhoneLookup.CONTENT_FILTER_URI, Uri.encode(phoneNumber))
+        val uri = Uri.withAppendedPath(ContactsContract.PhoneLookup.CONTENT_FILTER_URI, Uri.encode(trimmed))
         val projection = arrayOf(ContactsContract.PhoneLookup.DISPLAY_NAME)
         try {
             context.contentResolver.query(uri, projection, null, null, null)?.use { cursor ->
@@ -74,17 +79,19 @@ class SmsManagerHelper(private val context: Context) {
                 }
             }
         } catch (e: Exception) {
-            Log.w(TAG, "Error looking up contact for $phoneNumber: ${e.message}")
+            Log.w(TAG, "Error looking up contact for $trimmed: ${e.message}")
         }
         return null
     }
 
-    fun getConversations(limit: Int = 30): List<SmsConversation> {
+    fun getConversations(limit: Int = 40): List<SmsConversation> {
         if (context.checkSelfPermission(android.Manifest.permission.READ_SMS) != PackageManager.PERMISSION_GRANTED) {
+            Log.w(TAG, "READ_SMS permission not granted")
             return emptyList()
         }
         val list = mutableListOf<SmsConversation>()
         val seenThreads = mutableSetOf<Long>()
+        val seenAddresses = mutableSetOf<String>()
         val uri = Telephony.Sms.CONTENT_URI
         val projection = arrayOf(
             Telephony.Sms._ID,
@@ -112,10 +119,15 @@ class SmsManagerHelper(private val context: Context) {
 
                 while (cursor.moveToNext() && list.size < limit) {
                     val threadId = if (threadIdx >= 0) cursor.getLong(threadIdx) else 0L
-                    if (threadId != 0L && !seenThreads.add(threadId)) {
-                        continue
-                    }
                     val address = if (addressIdx >= 0) cursor.getString(addressIdx) ?: "" else ""
+                    val normalizedAddr = address.trim().replace(" ", "").replace("-", "")
+
+                    if (threadId > 0L) {
+                        if (!seenThreads.add(threadId)) continue
+                    } else if (normalizedAddr.isNotEmpty()) {
+                        if (!seenAddresses.add(normalizedAddr)) continue
+                    }
+
                     val body = if (bodyIdx >= 0) cursor.getString(bodyIdx) ?: "" else ""
                     val date = if (dateIdx >= 0) cursor.getLong(dateIdx) else 0L
                     val read = if (readIdx >= 0) cursor.getInt(readIdx) else 1
@@ -123,9 +135,9 @@ class SmsManagerHelper(private val context: Context) {
 
                     list.add(
                         SmsConversation(
-                            threadId = threadId,
+                            threadId = if (threadId > 0L) threadId else cursor.getLong(idIdx),
                             address = address,
-                            contactName = contactName,
+                            contactName = contactName ?: address,
                             snippet = body,
                             date = date,
                             unreadCount = if (read == 0) 1 else 0
@@ -133,6 +145,7 @@ class SmsManagerHelper(private val context: Context) {
                     )
                 }
             }
+            Log.i(TAG, "Queried ${list.size} SMS conversations successfully")
         } catch (e: Exception) {
             Log.e(TAG, "Error querying SMS conversations", e)
         }
