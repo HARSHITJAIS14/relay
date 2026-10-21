@@ -17,10 +17,7 @@ import android.widget.*
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 
-/**
- * Modern Minimalist Companion UI:
- * Pure monochrome aesthetic (Apple/Linear style) with subtle neutral cards and matte black primary actions.
- */
+/** Native dashboard for the paired Mac and everyday transfer actions. */
 class MainActivity : Activity() {
     private val executor = Executors.newSingleThreadExecutor()
     private val handler = Handler(Looper.getMainLooper())
@@ -29,6 +26,7 @@ class MainActivity : Activity() {
     
     // UI Elements
     private lateinit var statusPill: TextView
+    private lateinit var activityStatus: TextView
     private lateinit var pairingCard: LinearLayout
     private lateinit var pairingCode: TextView
     private lateinit var invitation: EditText
@@ -84,8 +82,8 @@ class MainActivity : Activity() {
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundColor(Color.parseColor("#FAFAFA"))
-            setPadding(dp(20), dp(36), dp(20), dp(28))
+            setBackgroundColor(Color.parseColor("#F3F4F0"))
+            setPadding(dp(24), dp(24), dp(24), dp(28))
         }
 
         // 1. TOP HEADER WITH LOGO & MINIMAL STATUS PILL
@@ -96,7 +94,7 @@ class MainActivity : Activity() {
         }
 
         val logoView = ImageView(this).apply {
-            setImageResource(R.drawable.ic_logo)
+            setImageResource(R.drawable.ic_relay_mark)
             layoutParams = LinearLayout.LayoutParams(dp(36), dp(36)).apply {
                 marginEnd = dp(12)
             }
@@ -105,15 +103,15 @@ class MainActivity : Activity() {
 
         val titleView = TextView(this).apply {
             text = "Relay"
-            textSize = 22f
+            textSize = 26f
             setTypeface(null, Typeface.BOLD)
-            setTextColor(Color.parseColor("#111827"))
+            setTextColor(Color.parseColor("#172C29"))
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
         header.addView(titleView)
 
         statusPill = TextView(this).apply {
-            text = "● Checking..."
+            text = "Starting…"
             textSize = 12f
             setTypeface(null, Typeface.BOLD)
             setPadding(dp(12), dp(6), dp(12), dp(6))
@@ -122,13 +120,26 @@ class MainActivity : Activity() {
         }
         header.addView(statusPill)
         root.addView(header)
+        root.addView(TextView(this).apply {
+            text = "Two devices. One flow."
+            textSize = 30f
+            setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL))
+            setTextColor(Color.parseColor("#172C29"))
+            setPadding(0, dp(4), 0, dp(8))
+        })
+        root.addView(TextView(this).apply {
+            text = "Your Android, meet your Mac."
+            textSize = 15f
+            setTextColor(Color.parseColor("#586864"))
+            setPadding(0, 0, 0, dp(24))
+        })
 
         fun createCard(): LinearLayout {
             return LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
                 setBackgroundResource(R.drawable.bg_card)
                 setPadding(dp(18), dp(18), dp(18), dp(18))
-                elevation = 1f * density
+                elevation = 0f
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT
@@ -144,18 +155,18 @@ class MainActivity : Activity() {
                 text = "Pair with your Mac"
                 textSize = 17f
                 setTypeface(null, Typeface.BOLD)
-                setTextColor(Color.parseColor("#111827"))
+                setTextColor(Color.parseColor("#172C29"))
                 setPadding(0, 0, 0, dp(4))
             })
             addView(TextView(this@MainActivity).apply {
-                text = "Open Companion in your Mac menu bar and scan the QR code to connect securely."
+                text = "Open Relay on your Mac. Scan its QR code, then compare the verification code on both devices."
                 textSize = 13f
-                setTextColor(Color.parseColor("#6B7280"))
+                setTextColor(Color.parseColor("#586864"))
                 setPadding(0, 0, 0, dp(16))
             })
 
             scanQrBtn = Button(this@MainActivity).apply {
-                text = "📷 Scan QR Code on Mac to Pair"
+                text = "Scan Mac QR code"
                 textSize = 14f
                 setTypeface(null, Typeface.BOLD)
                 setTextColor(Color.WHITE)
@@ -171,7 +182,7 @@ class MainActivity : Activity() {
                                     invitation.setText(rawValue)
                                     work { client.beginPairing(rawValue) }
                                 } else {
-                                    Toast.makeText(this@MainActivity, "Not a valid Companion pairing QR code", Toast.LENGTH_LONG).show()
+                                    Toast.makeText(this@MainActivity, "Not a valid Relay pairing QR code", Toast.LENGTH_LONG).show()
                                 }
                             }
                             .addOnFailureListener { e: Exception ->
@@ -187,7 +198,7 @@ class MainActivity : Activity() {
             pairingCode = TextView(this@MainActivity).apply {
                 textSize = 24f
                 setTypeface(Typeface.MONOSPACE, Typeface.BOLD)
-                setTextColor(Color.parseColor("#111827"))
+                setTextColor(Color.parseColor("#172C29"))
                 gravity = Gravity.CENTER
                 setPadding(0, dp(12), 0, dp(8))
             }
@@ -196,8 +207,8 @@ class MainActivity : Activity() {
             invitation = EditText(this@MainActivity).apply {
                 hint = "Or paste pairing invitation link"
                 textSize = 12f
-                setTextColor(Color.parseColor("#111827"))
-                setHintTextColor(Color.parseColor("#9CA3AF"))
+                setTextColor(Color.parseColor("#172C29"))
+                setHintTextColor(Color.parseColor("#667670"))
                 setBackgroundResource(R.drawable.bg_input)
                 setPadding(dp(12), dp(10), dp(12), dp(10))
                 minLines = 1
@@ -216,7 +227,7 @@ class MainActivity : Activity() {
                 text = "Pair with Link"
                 textSize = 14f
                 setTypeface(null, Typeface.BOLD)
-                setTextColor(Color.parseColor("#111827"))
+                setTextColor(Color.parseColor("#172C29"))
                 setBackgroundResource(R.drawable.btn_secondary_pill)
                 setOnClickListener {
                     val value = invitation.text.toString()
@@ -233,18 +244,18 @@ class MainActivity : Activity() {
                 text = "Send to Mac"
                 textSize = 17f
                 setTypeface(null, Typeface.BOLD)
-                setTextColor(Color.parseColor("#111827"))
+                setTextColor(Color.parseColor("#172C29"))
                 setPadding(0, 0, 0, dp(2))
             })
             addView(TextView(this@MainActivity).apply {
-                text = "Transfer photos, videos, or documents directly to Mac."
+                text = "Photos, documents, and everything in between. Up to 100 MiB per file."
                 textSize = 13f
-                setTextColor(Color.parseColor("#6B7280"))
+                setTextColor(Color.parseColor("#586864"))
                 setPadding(0, 0, 0, dp(14))
             })
 
             send = Button(this@MainActivity).apply {
-                text = "📤  Choose & Send File"
+                text = "Choose a file"
                 textSize = 14f
                 setTypeface(null, Typeface.BOLD)
                 setTextColor(Color.WHITE)
@@ -264,21 +275,21 @@ class MainActivity : Activity() {
         // 4. CONTINUOUS CLIPBOARD CARD (Refined Neutral Styling)
         clipboardCard = createCard().apply {
             addView(TextView(this@MainActivity).apply {
-                text = "⚡ Continuous Clipboard"
+                text = "Clipboard"
                 textSize = 16f
                 setTypeface(null, Typeface.BOLD)
-                setTextColor(Color.parseColor("#111827"))
+                setTextColor(Color.parseColor("#172C29"))
                 setPadding(0, 0, 0, dp(2))
             })
             addView(TextView(this@MainActivity).apply {
-                text = "Smart timestamp comparison between phone & Mac."
+                text = "Pick up where you copied off."
                 textSize = 13f
-                setTextColor(Color.parseColor("#6B7280"))
+                setTextColor(Color.parseColor("#586864"))
                 setPadding(0, 0, 0, dp(10))
             })
 
             clipboardSnippet = TextView(this@MainActivity).apply {
-                text = "Phone clipboard: Tap below to sync"
+                text = "Your next copy starts here."
                 textSize = 12f
                 setTextColor(Color.parseColor("#374151"))
                 setBackgroundResource(R.drawable.bg_snippet)
@@ -302,10 +313,10 @@ class MainActivity : Activity() {
             }
 
             syncClipboardBtn = Button(this@MainActivity).apply {
-                text = "⚡ Sync Clip"
+                text = "Sync clipboard"
                 textSize = 13f
                 setTypeface(null, Typeface.BOLD)
-                setTextColor(Color.parseColor("#111827"))
+                setTextColor(Color.parseColor("#172C29"))
                 setBackgroundResource(R.drawable.btn_secondary_pill)
                 setPadding(dp(12), dp(10), dp(12), dp(10))
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
@@ -322,10 +333,10 @@ class MainActivity : Activity() {
             clipActionRow.addView(syncClipboardBtn)
 
             getMacBtn = Button(this@MainActivity).apply {
-                text = "⬇ Get Mac"
+                text = "Get from Mac"
                 textSize = 13f
                 setTypeface(null, Typeface.BOLD)
-                setTextColor(Color.parseColor("#111827"))
+                setTextColor(Color.parseColor("#172C29"))
                 setBackgroundResource(R.drawable.btn_secondary_pill)
                 setPadding(dp(12), dp(10), dp(12), dp(10))
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
@@ -343,7 +354,7 @@ class MainActivity : Activity() {
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 val addTileBtn = Button(this@MainActivity).apply {
-                    text = "⚙️ Add 'Sync Clip' Tile to Quick Settings"
+                    text = "Add shortcut to Quick Settings"
                     textSize = 12f
                     setTextColor(Color.parseColor("#4B5563"))
                     setBackgroundResource(R.drawable.btn_outline)
@@ -372,9 +383,9 @@ class MainActivity : Activity() {
             }
 
             autoApplyCheck = CheckBox(this@MainActivity).apply {
-                text = "Auto-sync Mac copies immediately (shows toast popup)"
+                text = "Apply Mac clipboard automatically (Android may show a popup)"
                 textSize = 12f
-                setTextColor(Color.parseColor("#6B7280"))
+                setTextColor(Color.parseColor("#586864"))
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT
@@ -394,16 +405,16 @@ class MainActivity : Activity() {
         // 5. CAMERA & SCANNER CARD (Refined Neutral Styling)
         captureCard = createCard().apply {
             addView(TextView(this@MainActivity).apply {
-                text = "📸 Photo & Document Capture"
+                text = "Camera & scanner"
                 textSize = 16f
                 setTypeface(null, Typeface.BOLD)
-                setTextColor(Color.parseColor("#111827"))
+                setTextColor(Color.parseColor("#172C29"))
                 setPadding(0, 0, 0, dp(2))
             })
             addView(TextView(this@MainActivity).apply {
-                text = "Capture with phone camera and stream directly to Mac."
+                text = "From your camera to your Mac, without the detour."
                 textSize = 13f
-                setTextColor(Color.parseColor("#6B7280"))
+                setTextColor(Color.parseColor("#586864"))
                 setPadding(0, 0, 0, dp(12))
             })
 
@@ -416,10 +427,10 @@ class MainActivity : Activity() {
             }
 
             val photoBtn = Button(this@MainActivity).apply {
-                text = "📸 Take Photo"
+                text = "Take photo"
                 textSize = 13f
                 setTypeface(null, Typeface.BOLD)
-                setTextColor(Color.parseColor("#111827"))
+                setTextColor(Color.parseColor("#172C29"))
                 setBackgroundResource(R.drawable.btn_secondary_pill)
                 setPadding(dp(10), dp(10), dp(10), dp(10))
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
@@ -434,10 +445,10 @@ class MainActivity : Activity() {
             captureRow.addView(photoBtn)
 
             val scanBtn = Button(this@MainActivity).apply {
-                text = "📄 Scan PDF"
+                text = "Scan PDF"
                 textSize = 13f
                 setTypeface(null, Typeface.BOLD)
-                setTextColor(Color.parseColor("#111827"))
+                setTextColor(Color.parseColor("#172C29"))
                 setBackgroundResource(R.drawable.btn_secondary_pill)
                 setPadding(dp(10), dp(10), dp(10), dp(10))
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
@@ -455,18 +466,18 @@ class MainActivity : Activity() {
         // 6. SEND LINK / TEXT CARD
         textCard = createCard().apply {
             addView(TextView(this@MainActivity).apply {
-                text = "🔗 Send Link or Text to Mac"
+                text = "Send a thought"
                 textSize = 16f
                 setTypeface(null, Typeface.BOLD)
-                setTextColor(Color.parseColor("#111827"))
+                setTextColor(Color.parseColor("#172C29"))
                 setPadding(0, 0, 0, dp(8))
             })
 
             textInput = EditText(this@MainActivity).apply {
-                hint = "Type or paste link or text here..."
+                hint = "A link, a note, anything worth keeping…"
                 textSize = 13f
-                setTextColor(Color.parseColor("#111827"))
-                setHintTextColor(Color.parseColor("#9CA3AF"))
+                setTextColor(Color.parseColor("#172C29"))
+                setHintTextColor(Color.parseColor("#667670"))
                 setBackgroundResource(R.drawable.bg_input)
                 setPadding(dp(14), dp(10), dp(14), dp(10))
                 layoutParams = LinearLayout.LayoutParams(
@@ -514,7 +525,7 @@ class MainActivity : Activity() {
         }
 
         val reconnectBtn = Button(this).apply {
-            text = "🔄 Sync Now"
+            text = "Reconnect"
             textSize = 12f
             setTextColor(Color.parseColor("#4B5563"))
             setBackgroundResource(R.drawable.btn_outline)
@@ -546,7 +557,46 @@ class MainActivity : Activity() {
         footerRow.addView(forgetBtn)
         root.addView(footerRow)
 
-        setContentView(ScrollView(this).apply { addView(root) })
+        activityStatus = TextView(this).apply {
+            text = "Starting Relay…"
+            textSize = 13f
+            setTextColor(Color.parseColor("#586864"))
+            setPadding(0, dp(8), 0, dp(16))
+        }
+        root.addView(activityStatus)
+        root.addView(TextView(this).apply {
+            text = "DIRECT CONNECTION  /  NO ACCOUNT NEEDED"
+            textSize = 10f
+            letterSpacing = 0.08f
+            setTextColor(Color.parseColor("#586864"))
+        })
+        // Use consistent sentence-case controls and comfortable touch targets.
+        fun refineControls(view: View) {
+            if (view is Button) {
+                view.isAllCaps = false
+                view.minHeight = dp(48)
+                if (view.layoutParams?.height?.let { it in 1 until dp(48) } == true) {
+                    view.layoutParams.height = dp(48)
+                }
+            }
+            if (view is android.view.ViewGroup) {
+                for (i in 0 until view.childCount) refineControls(view.getChildAt(i))
+            }
+        }
+        refineControls(root)
+        listOf(heroSendCard, clipboardCard, captureCard, textCard, footerRow).forEach { it.visibility = View.GONE }
+        scanQrBtn.isEnabled = false
+        pair.isEnabled = false
+        setContentView(ScrollView(this).apply {
+            addView(root)
+            setOnApplyWindowInsetsListener { view, insets ->
+                if (Build.VERSION.SDK_INT >= 30) {
+                    val bars = insets.getInsets(android.view.WindowInsets.Type.systemBars())
+                    view.setPadding(bars.left, bars.top, bars.right, bars.bottom)
+                }
+                insets
+            }
+        })
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
@@ -558,7 +608,7 @@ class MainActivity : Activity() {
             client = PeerClient(applicationContext)
             if (client.paired) {
                 CompanionSyncService.start(applicationContext)
-                "Mac Connected"
+                "Mac paired"
             } else {
                 "Pair your Mac once to get started."
             }
@@ -589,7 +639,7 @@ class MainActivity : Activity() {
         if (::client.isInitialized && client.paired) {
             CompanionSyncService.start(applicationContext)
             work {
-                client.syncCurrentClipboardToMac() ?: client.pollRemoteClipboard() ?: "Mac Connected"
+                client.syncCurrentClipboardToMac() ?: client.pollRemoteClipboard() ?: "Mac paired"
             }
         }
     }
@@ -632,7 +682,7 @@ class MainActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             setBackgroundResource(R.drawable.bg_card)
             setPadding(dp(18), dp(18), dp(18), dp(18))
-            elevation = 1f * density
+            elevation = 0f
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
@@ -645,7 +695,7 @@ class MainActivity : Activity() {
             text = "Inbox from Mac (${items.size})"
             textSize = 16f
             setTypeface(null, Typeface.BOLD)
-            setTextColor(Color.parseColor("#111827"))
+            setTextColor(Color.parseColor("#172C29"))
             setPadding(0, 0, 0, dp(10))
         })
 
@@ -680,11 +730,12 @@ class MainActivity : Activity() {
 
             if (isLink) {
                 actionRow.addView(Button(this).apply {
-                    this.text = "Open Link"
+                    isAllCaps = false
+                    this.text = "Open link"
                     textSize = 11f
-                    setTextColor(Color.parseColor("#111827"))
+                    setTextColor(Color.parseColor("#172C29"))
                     setBackgroundResource(R.drawable.btn_secondary_pill)
-                    layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, dp(34)).apply {
+                    layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, dp(48)).apply {
                         marginEnd = dp(6)
                     }
                     setOnClickListener {
@@ -698,11 +749,12 @@ class MainActivity : Activity() {
             }
 
             actionRow.addView(Button(this).apply {
+                isAllCaps = false
                 this.text = "Copy"
                 textSize = 11f
-                setTextColor(Color.parseColor("#111827"))
+                setTextColor(Color.parseColor("#172C29"))
                 setBackgroundResource(R.drawable.btn_secondary_pill)
-                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, dp(34)).apply {
+                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, dp(48)).apply {
                     marginEnd = dp(6)
                 }
                 setOnClickListener {
@@ -714,11 +766,12 @@ class MainActivity : Activity() {
             })
 
             actionRow.addView(Button(this).apply {
+                isAllCaps = false
                 this.text = "Dismiss"
                 textSize = 11f
-                setTextColor(Color.parseColor("#6B7280"))
+                setTextColor(Color.parseColor("#586864"))
                 setBackgroundResource(R.drawable.btn_outline)
-                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, dp(34))
+                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, dp(48))
                 setOnClickListener {
                     client.removeInboxItem(id)
                     refreshInboxUI()
@@ -738,15 +791,19 @@ class MainActivity : Activity() {
             handler.post {
                 working.set(false)
                 if (isDestroyed) return@post
+                activityStatus.text = result
                 
                 if (::client.isInitialized) {
+                    scanQrBtn.isEnabled = true
+                    pair.isEnabled = true
+                    autoApplyCheck.isChecked = client.autoApplyMacClipboard
                     val ready = client.paired
                     if (ready) {
-                        statusPill.text = "● Mac Connected"
+                        statusPill.text = "Mac paired"
                         statusPill.setBackgroundResource(R.drawable.bg_pill_connected)
                         statusPill.setTextColor(Color.parseColor("#15803D"))
                     } else {
-                        statusPill.text = "○ Waiting for Mac"
+                        statusPill.text = "Not paired"
                         statusPill.setBackgroundResource(R.drawable.bg_pill_disconnected)
                         statusPill.setTextColor(Color.parseColor("#64748B"))
                     }

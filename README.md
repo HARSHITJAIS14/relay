@@ -1,80 +1,99 @@
 <div align="center">
 
-# Relay
+![Relay: Your Mac. Your Android. Finally, on speaking terms.](assets/relay-banner.svg)
 
-**A seamless, private connection between Mac and Android.**
+**You bought a Mac. You didn't sign up to buy an iPhone.**
 
-Move files, text, clipboards, and scans between your Mac and phone as if they were one device.  
-Zero accounts. Zero cloud servers. Pure encrypted local Wi-Fi.
+Relay brings your Android into your Mac workflow. Send a file, grab a clipboard,
+share a link, or turn your phone into your Mac's camera and document scanner.
+Your devices talk directly over local Wi-Fi.
 
-[![Release](https://img.shields.io/badge/Release-v1.0.0-black?style=flat-square)](https://github.com/HARSHITJAIS14/relay/releases/tag/v1.0.0)
-[![Platforms](https://img.shields.io/badge/Platforms-macOS%20%7C%20Android-black?style=flat-square)](#download)
-[![Security](https://img.shields.io/badge/Security-mTLS%20%2B%20AES--GCM-black?style=flat-square)](#security)
+[Download v1.0.0](https://github.com/HARSHITJAIS14/relay/releases/tag/v1.0.0) · [Get started](#get-started) · [Build from source](#build-from-source)
 
 </div>
 
----
+## Keep the phone you like
 
-## Downloads
+An ecosystem should connect the devices you chose. Relay is a small, native bridge
+between macOS and Android, with no account and no cloud relay for your transfers.
 
-| Platform | Package | Architecture / Target |
-| :--- | :--- | :--- |
-| **macOS** | [**Relay-v1.0.0.dmg**](https://github.com/HARSHITJAIS14/relay/releases/download/v1.0.0/Relay-v1.0.0.dmg) | macOS 13.0+ (Apple Silicon & Intel) |
-| **Android** | [**Relay-v1.0.0.apk**](https://github.com/HARSHITJAIS14/relay/releases/download/v1.0.0/Relay-v1.0.0.apk) | Android 10+ (Tested through Android 16) |
+| When you need to… | Use Relay to… |
+| --- | --- |
+| Get a photo or document onto the other device | Send from Android's share sheet, or choose/drop a file in the Mac window or menu bar panel. |
+| Move something you copied | Sync your clipboard in the Android app or with the **Sync Clip** Quick Settings tile. |
+| Save a link without losing your clipboard | Send it to the other device's text and link inbox. |
+| Get a paper document onto your Mac | Capture a photo or scan multiple pages into a PDF on your phone. You can request capture from your Mac. |
 
----
+## Get started
 
-## Features
+1. Install Relay on your Mac and Android phone. Put both devices on the same local network.
+2. Open Relay on your Mac, then choose **Scan Mac QR code** on Android.
+3. Compare the verification codes on both devices and approve pairing on your Mac.
+4. Send a file, share a link, or sync your clipboard.
 
-### ⚡ Continuous Clipboard
-- **Last-Write-Wins Sync**: Compares millisecond timestamps between Mac pasteboard and Android clipboard to automatically sync whichever you copied latest.
-- **Quick Settings Tile**: A dedicated *"Sync Clip"* tile sits right next to Bluetooth in your phone's notification shade for 1-tap synchronization anytime.
-- **Silent & Private**: Silent background caching avoids disruptive toast alerts. Sensitive clipboards (`EXTRA_IS_SENSITIVE`) are masked.
+Received files go to `Downloads/Relay`. Open the Mac's received-files button to jump there.
+QR scanning uses Google Play services; you can also paste a pairing invitation link.
 
-### 📤 High-Speed File Transfer
-- **Mac Menu Bar Drop Zone**: Drag and drop any files onto the Relay menu bar icon to stream them directly to your phone.
-- **Android Share Sheet**: Share photos, videos, or documents directly from the Gallery, Files, or any app via *"Send with Relay"*.
-- **Chunk-Based Checkpoint & Resume**: If Wi-Fi blips or your laptop sleeps, Relay automatically resumes from the last byte offset and verifies whole-file SHA-256 integrity before publishing.
+## Downloads & current status
 
-### 📸 Photo Capture & Multi-Page Document Scanner
-- **Mac-Initiated Capture**: Tap *"📸 Take Photo"* or *"📄 Scan Document"* from your Mac menu bar to pop a camera trigger on your phone.
-- **Multi-Page PDF Scanner**: Capture multiple document pages with manual edge adjustment and orientation correction, rendered directly into a scaled PDF in `Downloads/Relay`.
+[Published v1.0.0 packages](https://github.com/HARSHITJAIS14/relay/releases/tag/v1.0.0)
+are available for macOS and Android. **The interface refresh shown in this source branch
+is newer than those binaries. Build from source to try it.**
 
-### 🔗 Bidirectional Text & Link Inbox
-- Share URLs or snippets from Safari/Chrome without replacing your clipboard.
-- Access received links and snippets in a clean, minimal inbox with 1-tap *Open*, *Copy*, or *Dismiss*.
+Relay is an early project. Current limits are part of the deal:
 
----
+- **100 MiB per file.** Transfers use checkpoints and verify the complete file with SHA-256 before saving it.
+- **Local network required.** Guest Wi-Fi, client isolation, firewalls, and sleeping devices can prevent connections.
+- **Clipboard access depends on Android.** Use the app, share sheet, or Quick Settings tile when background clipboard access is restricted. Applying Mac clipboard updates automatically is an optional Android setting.
+- **Build targets:** macOS 13+ and Android 10+. Existing device testing covers an Apple Silicon Mac and an Android 16 phone; that does not establish compatibility with every supported OS or Intel Macs.
+- **Development distribution:** the Mac packaging script uses local or ad-hoc signing, and the Android build below produces a debug APK. These are not notarized Mac or Play Store releases.
 
-## 🔒 Security & Architecture
+## Private by design
 
-- **Mutual TLS (mTLS)**: Every connection uses TLS 1.3 with client & server certificate verification. No device can communicate without explicit pairing consent.
-- **Zero-Cloud**: Traffic never touches external servers, relay nodes, or third-party cloud infrastructure. All data travels strictly over your local Wi-Fi.
-- **Instant Zero-Permission Pairing**: The Mac generates an on-screen QR invitation. The Android app uses the Google Play Code Scanner overlay (zero camera permission required) to scan the code, verify a 6-digit cryptographic SAS code, and establish mutual trust.
+Pairing requires explicit approval and matching verification codes. Paired devices use
+mutual TLS and pinned certificate identities. The implementation permits TLS 1.2 and
+TLS 1.3; transferred files are checked with SHA-256.
 
----
+Relay's transfer path is device-to-device on your local network. There is no Relay account,
+cloud inbox, or hosted transfer server. This is a description of the implementation,
+not a claim of an independent security audit.
 
-## Building from Source
+## Build from source
 
-### macOS App
-Requires Xcode Command Line Tools and Swift 6:
-```bash
-cd apps/macos
-swift build
-python3 ../../tools/package_macos.py
-# Produces Relay.app in apps/macos/.build/Relay.app
+### macOS
+
+Install Xcode Command Line Tools with a Swift 6 toolchain, then run from the repository root:
+
+```sh
+swift test --package-path apps/macos
+python3 tools/package_macos.py
+open apps/macos/.build/Relay.app
 ```
 
-### Android App
-Requires JDK 17 and Android SDK:
-```bash
+The bundle is built for the host architecture. The packaging script uses a local signing
+identity if configured, or falls back to ad-hoc signing.
+
+### Android
+
+Install JDK 17 and Android SDK platform 36. Set `JAVA_HOME` and `ANDROID_HOME` for your installation, then:
+
+```sh
 cd apps/android
-./gradlew assembleDebug
-# Produces app-debug.apk in apps/android/app/build/outputs/apk/debug/
+./gradlew :core:test :app:assembleDebug
 ```
 
----
+The APK is written to `apps/android/app/build/outputs/apk/debug/app-debug.apk`.
+
+## Where Relay goes next
+
+The next priorities are reliable reconnect feedback, broader device testing, signed
+installation packages, and a short real-device demo. Notification mirroring and remote
+internet transfers are not current features.
+
+Found a rough edge? [Open an issue](https://github.com/HARSHITJAIS14/relay/issues)
+with your OS versions, what you tried, and what happened. Keep personal clipboard contents
+and pairing invitations out of reports.
 
 ## License
 
-MIT License. Crafted with minimal monochrome aesthetics and native platform ergonomics.
+MIT. See [LICENSE](LICENSE).

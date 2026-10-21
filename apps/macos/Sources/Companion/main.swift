@@ -41,12 +41,12 @@ struct CompanionApp: App {
                 .keyboardShortcut("r", modifiers: [.command, .shift])
             }
             CommandMenu("Device") {
-                Button("📸 Take Photo from Phone") {
+                Button("Take Photo from Phone") {
                     Task { await server.requestCapture(mode: "photo") }
                 }
                 .keyboardShortcut("p", modifiers: [.command, .shift])
 
-                Button("📄 Scan Document from Phone") {
+                Button("Scan Document from Phone") {
                     Task { await server.requestCapture(mode: "scan") }
                 }
                 .keyboardShortcut("d", modifiers: [.command, .shift])
@@ -84,32 +84,29 @@ func generateQRCode(from string: String) -> NSImage? {
 
 struct CompanionView: View {
     @ObservedObject var server: CompanionServer
+    @Environment(\.colorScheme) private var colorScheme
     @State private var host = ""
     @State private var textToSend = ""
     @State private var isDropTargeted = false
+    private let relayGreen = Color(red: 0.14, green: 0.36, blue: 0.31)
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 HStack(spacing: 10) {
-                    if let logoPath = Bundle.main.path(forResource: "MenuBarIcon@2x", ofType: "png"),
-                       let nsImg = NSImage(contentsOfFile: logoPath) {
-                        Image(nsImage: nsImg)
-                            .resizable()
-                            .scaledToFit()
-                            .frame(width: 28, height: 28)
-                            .clipShape(RoundedRectangle(cornerRadius: 6))
-                    } else {
-                        Image(systemName: "link")
-                            .font(.title3.weight(.bold))
-                    }
+                    Image(systemName: "arrow.up.arrow.down")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .frame(width: 36, height: 36)
+                        .background(relayGreen, in: RoundedRectangle(cornerRadius: 10))
                     Text("Relay")
-                        .font(.title3.weight(.bold))
+                        .font(.system(size: 24, weight: .semibold, design: .rounded))
                     Spacer()
                     if let peer = server.peerName {
                         HStack(spacing: 5) {
                             Circle().fill(Color.green).frame(width: 7, height: 7)
-                            Text(peer)
+                            Text("Paired · \(peer)")
+                                .lineLimit(1)
                                 .font(.caption.weight(.semibold))
                         }
                         .padding(.horizontal, 10)
@@ -127,7 +124,14 @@ struct CompanionView: View {
                         .background(Capsule().fill(Color.secondary.opacity(0.1)))
                     }
                 }
-                Divider()
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Two devices. One flow.")
+                        .font(.system(size: 28, weight: .medium))
+                    Text(server.peerName == nil ? "Your Mac, meet your Android." : "A little less back and forth.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.vertical, 8)
                 if let request = server.pending {
                     Text("Pair with \(request.name)?").font(.headline)
                     Text(request.code).font(.system(.title, design: .monospaced)).textSelection(.enabled)
@@ -137,7 +141,7 @@ struct CompanionView: View {
                         Button("Reject") { server.reject() }
                     }
                 } else if server.peerName == nil {
-                    Text("Pair your phone").font(.headline)
+                    Text("01  /  Pair your phone").font(.headline)
                     if !server.invitation.isEmpty {
                         if let qr = generateQRCode(from: server.invitation) {
                             VStack(spacing: 8) {
@@ -148,8 +152,9 @@ struct CompanionView: View {
                                     .frame(width: 170, height: 170)
                                     .padding(8)
                                     .background(RoundedRectangle(cornerRadius: 12).fill(Color.white))
-                                    .shadow(color: .black.opacity(0.12), radius: 6, x: 0, y: 3)
-                                Text("Scan with Relay on your phone to pair")
+
+                                Text("Open Relay on Android and scan this code.\nThen compare the verification code on both devices.")
+                                    .multilineTextAlignment(.center)
                                     .font(.caption).foregroundColor(.secondary)
                             }
                             .frame(maxWidth: .infinity)
@@ -168,22 +173,24 @@ struct CompanionView: View {
                         Button("Create pairing invitation") { server.createInvitation(host: host) }
                     }
                 } else {
-                    Text("Trusted phone: \(server.peerName!)").font(.headline)
+                    Text("FILES").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
 
                     // Drag and Drop Zone
                     ZStack {
                         RoundedRectangle(cornerRadius: 12)
-                            .strokeBorder(isDropTargeted ? Color.accentColor : Color.secondary.opacity(0.3),
+                            .strokeBorder(isDropTargeted ? relayGreen : Color.secondary.opacity(0.3),
                                           style: StrokeStyle(lineWidth: 2, dash: [6]))
                             .background(RoundedRectangle(cornerRadius: 12)
-                                .fill(isDropTargeted ? Color.accentColor.opacity(0.1) : Color.secondary.opacity(0.05)))
-                            .frame(height: 80)
+                                .fill(isDropTargeted ? relayGreen.opacity(0.1) : Color.secondary.opacity(0.05)))
+                            .frame(height: 120)
                         VStack(spacing: 4) {
-                            Image(systemName: "arrow.down.doc")
+                            Image(systemName: "arrow.up.doc")
                                 .font(.title3)
-                                .foregroundColor(.accentColor)
-                            Text("Drag & drop files here to send")
-                                .font(.callout)
+                                .foregroundStyle(colorScheme == .dark ? Color(red: 0.55, green: 0.80, blue: 0.69) : relayGreen)
+                            Text("Drop a file. It’s on your phone.")
+                                .font(.callout.weight(.medium))
+                            Text("Send directly over Wi-Fi · Up to 100 MiB")
+                                .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
                     }
@@ -209,6 +216,8 @@ struct CompanionView: View {
                                 Task { await server.enqueue(url) }
                             }
                         }
+                        .buttonStyle(.borderedProminent)
+                        .tint(relayGreen)
                         Button("Open received files") {
                             NSWorkspace.shared.open(server.receiveFolder)
                         }
@@ -225,7 +234,7 @@ struct CompanionView: View {
 
                     // Photo & Document Capture
                     HStack {
-                        Text("Capture from Phone").font(.headline)
+                        Text("Camera & scanner").font(.headline)
                         Spacer()
                     }
                     if let active = server.activeCaptureRequest {
@@ -241,11 +250,19 @@ struct CompanionView: View {
                         }
                     } else {
                         HStack {
-                            Button("📸 Take Photo") {
+                            Button {
                                 Task { await server.requestCapture(mode: "photo") }
+                            } label: {
+                                Label("Take photo", systemImage: "camera")
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 6)
                             }
-                            Button("📄 Scan Document") {
+                            Button {
                                 Task { await server.requestCapture(mode: "scan") }
+                            } label: {
+                                Label("Scan document", systemImage: "doc.viewfinder")
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 6)
                             }
                         }
                     }
@@ -254,16 +271,17 @@ struct CompanionView: View {
 
                     // Clipboard & Text sharing
                     HStack {
-                        Text("Continuous Clipboard").font(.headline)
+                        Text("Clipboard").font(.headline)
                         Spacer()
-                        Toggle("", isOn: $server.clipboardSyncEnabled)
+                        Toggle("Sync clipboard", isOn: $server.clipboardSyncEnabled)
                             .labelsHidden()
                     }
-                    Text("Copying on Mac automatically updates your phone's clipboard.")
+                    Text("Copy on Mac, then use Relay on your phone to sync or paste. Android may require a tap.")
                         .font(.caption).foregroundStyle(.secondary)
 
+                    Text("Send a thought").font(.headline)
                     HStack {
-                        TextField("Paste or type link/text…", text: $textToSend)
+                        TextField("A link, a note, anything…", text: $textToSend)
                             .textFieldStyle(.roundedBorder)
                         Button("Send") {
                             let text = textToSend
@@ -285,7 +303,7 @@ struct CompanionView: View {
                                 VStack(alignment: .leading, spacing: 6) {
                                     HStack(alignment: .top) {
                                         Image(systemName: item.isLink ? "link" : "doc.text")
-                                            .foregroundColor(.accentColor)
+                                            .foregroundStyle(colorScheme == .dark ? Color(red: 0.55, green: 0.80, blue: 0.69) : relayGreen)
                                         Text(item.text)
                                             .font(.system(.body, design: item.isLink ? .monospaced : .default))
                                             .textSelection(.enabled)
@@ -329,11 +347,20 @@ struct CompanionView: View {
                         .font(.subheadline)
                     Button("Forget phone", role: .destructive) { server.forget() }
                 }
-                Text("Development build • files up to 100 MiB • original filenames retained")
-                    .font(.caption).foregroundStyle(.secondary)
+                Divider()
+                Label(server.status, systemImage: "network")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+                Text("DIRECT CONNECTION  /  NO ACCOUNT NEEDED")
+                    .font(.system(size: 9, weight: .medium))
+                    .tracking(1.2)
+                    .foregroundStyle(.secondary)
             }
             .padding(24)
         }
+        .background(Color(nsColor: .windowBackgroundColor))
+        .tint(colorScheme == .dark ? Color(red: 0.55, green: 0.80, blue: 0.69) : relayGreen)
         .task { await server.start() }
     }
 }

@@ -7,7 +7,7 @@
                 android:angle="0"
                 android:startColor="#5EA8DE"
                 android:endColor="#4394CE" />
-            <corners android:radius="14dp" />
+            <corners android:radius="10dp" />
         </shape>
     </item>
 </ripple>
