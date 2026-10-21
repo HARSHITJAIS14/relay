@@ -8,7 +8,7 @@ Relay brings your Android into your Mac workflow. Send a file, grab a clipboard,
 share a link, or turn your phone into your Mac's camera and document scanner.
 Your devices talk directly over local Wi-Fi.
 
-[Download v1.0.0](https://github.com/HARSHITJAIS14/relay/releases/tag/v1.0.0) · [Get started](#get-started) · [Build from source](#build-from-source)
+[Download v1.1.0](https://github.com/HARSHITJAIS14/relay/releases/tag/v1.1.0) · [Get started](#get-started) · [Build from source](#build-from-source)
 
 </div>
 
@@ -36,9 +36,17 @@ QR scanning uses Google Play services; you can also paste a pairing invitation l
 
 ## Downloads & current status
 
-[Published v1.0.0 packages](https://github.com/HARSHITJAIS14/relay/releases/tag/v1.0.0)
-are available for macOS and Android. **The interface refresh shown in this source branch
-is newer than those binaries. Build from source to try it.**
+[Download v1.1.0](https://github.com/HARSHITJAIS14/relay/releases/tag/v1.1.0), including the refreshed Mac and Android interfaces.
+
+| Platform | Package |
+| --- | --- |
+| macOS (Apple Silicon) | [Relay-v1.1.0.dmg](https://github.com/HARSHITJAIS14/relay/releases/download/v1.1.0/Relay-v1.1.0.dmg) |
+| Android | [Relay-v1.1.0.apk](https://github.com/HARSHITJAIS14/relay/releases/download/v1.1.0/Relay-v1.1.0.apk) |
+
+This release passed Android runtime and mutual-TLS checks, saved-pairing reconnection,
+and file transfers in both directions on a real Android 16 phone. The live test harness
+can refresh a stale Mac IP address after verifying the existing certificate pin;
+automatic address discovery is not yet implemented in the app.
 
 Relay is an early project. Current limits are part of the deal:
 

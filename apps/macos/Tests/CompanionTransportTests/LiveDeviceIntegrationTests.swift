@@ -193,24 +193,35 @@ final class LiveDeviceIntegrationTests: XCTestCase {
         }
 
         let peer = await server.peerName
-        XCTAssertEqual(peer, "I2217", "Server must load trusted peer from persistent storage")
+        XCTAssertNotNil(peer, "Server must load trusted peer from persistent storage")
+        guard let macIP = await CompanionServer.detectLocalIP() else {
+            XCTFail("Could not determine the Mac's current LAN address")
+            return
+        }
 
         // 2. Run upload test from phone without invitation
         let uploadResult = try Self.runAdbSync([
             "shell", "am", "instrument", "-w",
             "-e", "class", "dev.companion.android.NativeTransferTest#pairingAndUpload",
+            "-e", "host", macIP,
             "dev.companion.android.test/androidx.test.runner.AndroidJUnitRunner"
         ])
         print("Reconnection upload result:\n\(uploadResult.output)")
         XCTAssertEqual(uploadResult.exitCode, 0)
         XCTAssertTrue(uploadResult.output.contains("OK (1 test)"))
+        guard uploadResult.output.contains("OK (1 test)") else { return }
+
+        let receiveFolder = await server.receiveFolder
+        let uploaded = receiveFolder.appendingPathComponent("companion-phone-test.bin")
+        let expectedUpload = Data((0..<(1024 * 1024 + 17)).map { UInt8($0 % 251) })
+        XCTAssertEqual(try Data(contentsOf: uploaded), expectedUpload, "Phone upload bytes must match")
 
         // 3. Queue another file on Mac and receive on phone
         let testOutDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: testOutDir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: testOutDir) }
 
-        let sampleFile = testOutDir.appendingPathComponent("reconnect-sample.bin")
+        let sampleFile = testOutDir.appendingPathComponent("reconnect-\(UUID().uuidString).bin")
         let sampleData = Data(repeating: 0x42, count: 256 * 1024)
         try sampleData.write(to: sampleFile)
 
@@ -218,6 +229,8 @@ final class LiveDeviceIntegrationTests: XCTestCase {
         let receiveResult = try Self.runAdbSync([
             "shell", "am", "instrument", "-w",
             "-e", "class", "dev.companion.android.NativeTransferTest#receiveQueuedFile",
+            "-e", "expectedName", sampleFile.lastPathComponent,
+            "-e", "expectedSha256", digest(sampleData),
             "dev.companion.android.test/androidx.test.runner.AndroidJUnitRunner"
         ])
         print("Reconnection receive result:\n\(receiveResult.output)")

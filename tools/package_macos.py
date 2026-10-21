@@ -6,12 +6,12 @@ import subprocess
 from pathlib import Path
 
 root = Path(__file__).resolve().parents[1]
-subprocess.run(["swift", "build", "--package-path", str(root / "apps/macos")], check=True)
+subprocess.run(["swift", "build", "-c", "release", "--package-path", str(root / "apps/macos")], check=True)
 bundle = root / "apps/macos/.build/Relay.app"
 contents = bundle / "Contents"
 (contents / "MacOS").mkdir(parents=True, exist_ok=True)
 (contents / "Resources").mkdir(parents=True, exist_ok=True)
-shutil.copy2(root / "apps/macos/.build/debug/Companion", contents / "MacOS/Relay")
+shutil.copy2(root / "apps/macos/.build/release/Companion", contents / "MacOS/Relay")
 for item in (root / "apps/macos/Resources").glob("*"):
     shutil.copy2(item, contents / "Resources" / item.name)
 with (contents / "Info.plist").open("wb") as stream:
@@ -21,8 +21,8 @@ with (contents / "Info.plist").open("wb") as stream:
         "CFBundleExecutable": "Relay",
         "CFBundleIconFile": "AppIcon",
         "CFBundlePackageType": "APPL",
-        "CFBundleVersion": "1",
-        "CFBundleShortVersionString": "1.0.0",
+        "CFBundleVersion": "2",
+        "CFBundleShortVersionString": "1.1.0",
         "LSMinimumSystemVersion": "13.0",
         "NSLocalNetworkUsageDescription": "Connect securely to your paired phone and transfer your selected files.",
         "NSBonjourServices": ["_relay._tcp", "_companion._tcp"],

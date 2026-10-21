@@ -15,6 +15,20 @@ class NativeTransferTest {
         val context = instrumentation.targetContext
         val args = InstrumentationRegistry.getArguments()
         val client = PeerClient(context)
+        // A DHCP address can change without changing the paired Mac's identity.
+        // Keep the new endpoint only after the production certificate-pin check succeeds.
+        args.getString("host")?.let { host ->
+            assertTrue("A current paired Mac is required", client.paired)
+            val preferences = context.getSharedPreferences("companion-peer-v1", android.content.Context.MODE_PRIVATE)
+            val previousHost = client.host
+            check(preferences.edit().putString("host", host).commit())
+            try {
+                assertEquals("Connected to Mac", client.checkConnection())
+            } catch (failure: Throwable) {
+                check(preferences.edit().putString("host", previousHost).commit())
+                throw failure
+            }
+        }
         if (!client.paired) {
             val invitation = args.getString("invitation") ?: error("Supply an invitation from the Mac UI")
             client.beginPairing(invitation)
@@ -45,8 +59,33 @@ class NativeTransferTest {
 
     @Test fun receiveQueuedFile() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
-        val result = PeerClient(context).receiveNext()
+        val args = InstrumentationRegistry.getArguments()
+        val expectedName = args.getString("expectedName")
+        val client = PeerClient(context)
+        var result = client.receiveNext()
+        if (expectedName != null) {
+            // Earlier synthetic test files may still be queued from interrupted runs.
+            var attempts = 0
+            while (result?.contains(expectedName) != true && attempts++ < 20) {
+                result = client.receiveNext()
+            }
+        }
         assertNotNull("Queue a synthetic file in the Mac app before this test", result)
-        assertTrue(result!!.startsWith("Saved "))
+        assertTrue(result!!.startsWith("Saved ") || result.startsWith("Already saved "))
+        if (expectedName != null) {
+            assertTrue("Expected this run's file: $expectedName, got $result", result.contains(expectedName))
+            val expectedHash = args.getString("expectedSha256") ?: error("Supply expectedSha256")
+            context.contentResolver.query(
+                MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+                arrayOf(MediaStore.Downloads._ID),
+                "${MediaStore.Downloads.DISPLAY_NAME} = ? AND ${MediaStore.Downloads.RELATIVE_PATH} = ?",
+                arrayOf(expectedName, "Download/Relay/"), null
+            )!!.use { cursor ->
+                assertTrue("Received file must be published in Downloads/Relay", cursor.moveToFirst())
+                val uri = android.content.ContentUris.withAppendedId(MediaStore.Downloads.EXTERNAL_CONTENT_URI, cursor.getLong(0))
+                val bytes = context.contentResolver.openInputStream(uri)!!.use { it.readBytes() }
+                assertEquals("Published file bytes must match the Mac payload", expectedHash, sha256(bytes))
+            }
+        }
     }
 }

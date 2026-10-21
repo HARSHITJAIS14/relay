@@ -574,6 +574,8 @@ class MainActivity : Activity() {
         fun refineControls(view: View) {
             if (view is Button) {
                 view.isAllCaps = false
+                view.stateListAnimator = null
+                view.elevation = 0f
                 view.minHeight = dp(48)
                 if (view.layoutParams?.height?.let { it in 1 until dp(48) } == true) {
                     view.layoutParams.height = dp(48)
@@ -597,6 +599,17 @@ class MainActivity : Activity() {
                 insets
             }
         })
+
+        // This dashboard uses a light surface regardless of the system theme.
+        if (Build.VERSION.SDK_INT >= 30) {
+            val lightBars = android.view.WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS or
+                android.view.WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS
+            window.insetsController?.setSystemBarsAppearance(lightBars, lightBars)
+        } else {
+            @Suppress("DEPRECATION")
+            window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR or
+                View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
+        }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
@@ -730,6 +743,7 @@ class MainActivity : Activity() {
 
             if (isLink) {
                 actionRow.addView(Button(this).apply {
+                    stateListAnimator = null
                     isAllCaps = false
                     this.text = "Open link"
                     textSize = 11f
@@ -749,6 +763,7 @@ class MainActivity : Activity() {
             }
 
             actionRow.addView(Button(this).apply {
+                stateListAnimator = null
                 isAllCaps = false
                 this.text = "Copy"
                 textSize = 11f
@@ -766,6 +781,7 @@ class MainActivity : Activity() {
             })
 
             actionRow.addView(Button(this).apply {
+                stateListAnimator = null
                 isAllCaps = false
                 this.text = "Dismiss"
                 textSize = 11f
