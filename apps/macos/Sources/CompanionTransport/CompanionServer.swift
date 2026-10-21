@@ -549,31 +549,31 @@ public final class CompanionServer: ObservableObject {
         }
     }
 
-    public func answerCall() {
-        queueCommand(WireMessage(type: "call.answer"))
+    public func answerCall(speaker: Bool = false) {
+        queueCommand(WireMessage(type: "call.answer", canReply: speaker))
         if let current = activeCall {
             activeCall = ActiveCall(callId: current.callId, number: current.number, callerName: current.callerName, state: "OFFHOOK", timestamp: current.timestamp)
         }
-        BluetoothHandsFreeController.shared.acceptCall()
+    }
+
+    public func setSpeakerphone(on: Bool) {
+        queueCommand(WireMessage(type: "call.speaker", canReply: on))
     }
 
     public func rejectCall() {
         queueCommand(WireMessage(type: "call.reject"))
         activeCall = nil
-        BluetoothHandsFreeController.shared.endCall()
     }
 
     public func endCall() {
         queueCommand(WireMessage(type: "call.end"))
         activeCall = nil
-        BluetoothHandsFreeController.shared.endCall()
     }
 
     public func declineCallWithSms(number: String, message: String) {
         let trimmedMsg = message.trimmingCharacters(in: .whitespacesAndNewlines)
         queueCommand(WireMessage(type: "call.decline_with_sms", message: trimmedMsg, number: number))
         activeCall = nil
-        BluetoothHandsFreeController.shared.endCall()
     }
 
     public func dialNumber(_ number: String) {
@@ -581,7 +581,6 @@ public final class CompanionServer: ObservableObject {
         guard !trimmed.isEmpty else { return }
         queueCommand(WireMessage(type: "call.dial", number: trimmed))
         activeCall = ActiveCall(callId: UUID().uuidString.lowercased(), number: trimmed, callerName: trimmed, state: "OFFHOOK", timestamp: Int64(Date().timeIntervalSince1970 * 1000))
-        BluetoothHandsFreeController.shared.routeAudioToMac()
     }
 
     public func dismissCall() {
@@ -801,7 +800,6 @@ public final class CompanionServer: ObservableObject {
                 postMacNotification(title: "Missed Call", body: "\(caller) (\(number))")
             } else if callState == "IDLE" {
                 activeCall = nil
-                BluetoothHandsFreeController.shared.routeAudioToPhone()
             }
             try await channel.sendMessage(WireMessage(type: "call.receipt"))
         case "command.poll":

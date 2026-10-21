@@ -31,17 +31,18 @@ class RelayCallController(private val context: Context) {
     private val telecomManager = context.getSystemService(Context.TELECOM_SERVICE) as? TelecomManager
 
     /**
-     * Answers an incoming ringing call on the device.
+     * Answers an incoming ringing call on the device, optionally enabling speakerphone.
      */
-    fun answerCall(): Boolean {
-        Log.i(TAG, "Request to answer ringing call received")
+    fun answerCall(useSpeakerphone: Boolean = false): Boolean {
+        Log.i(TAG, "Request to answer ringing call received (speakerphone=$useSpeakerphone)")
+        var success = false
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             if (context.checkSelfPermission(android.Manifest.permission.ANSWER_PHONE_CALLS) == PackageManager.PERMISSION_GRANTED) {
                 try {
                     @Suppress("DEPRECATION")
                     telecomManager?.acceptRingingCall()
                     Log.i(TAG, "TelecomManager.acceptRingingCall() succeeded")
-                    return true
+                    success = true
                 } catch (e: Exception) {
                     Log.e(TAG, "acceptRingingCall failed, trying media hook fallback", e)
                 }
@@ -50,18 +51,38 @@ class RelayCallController(private val context: Context) {
             }
         }
 
-        // Fallback using headset hook media key
-        return try {
+        if (!success) {
+            // Fallback using headset hook media key
+            try {
+                val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+                val down = KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_HEADSETHOOK)
+                val up = KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_HEADSETHOOK)
+                audioManager?.dispatchMediaKeyEvent(down)
+                audioManager?.dispatchMediaKeyEvent(up)
+                Log.i(TAG, "Dispatched KEYCODE_HEADSETHOOK to answer call")
+                success = true
+            } catch (e: Exception) {
+                Log.e(TAG, "Media key answer fallback failed", e)
+            }
+        }
+
+        if (success && useSpeakerphone) {
+            setSpeakerphone(true)
+        }
+        return success
+    }
+
+    /**
+     * Toggles speakerphone mode on/off on the device.
+     */
+    fun setSpeakerphone(on: Boolean) {
+        try {
             val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
-            val down = KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_HEADSETHOOK)
-            val up = KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_HEADSETHOOK)
-            audioManager?.dispatchMediaKeyEvent(down)
-            audioManager?.dispatchMediaKeyEvent(up)
-            Log.i(TAG, "Dispatched KEYCODE_HEADSETHOOK to answer call")
-            true
+            audioManager?.mode = AudioManager.MODE_IN_CALL
+            audioManager?.isSpeakerphoneOn = on
+            Log.i(TAG, "Speakerphone set to $on")
         } catch (e: Exception) {
-            Log.e(TAG, "Media key answer fallback failed", e)
-            false
+            Log.e(TAG, "Failed to toggle speakerphone", e)
         }
     }
 

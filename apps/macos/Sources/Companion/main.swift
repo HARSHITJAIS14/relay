@@ -120,7 +120,6 @@ private func formatDuration(_ totalSeconds: Int) -> String {
 
 struct CompanionView: View {
     @ObservedObject var server: CompanionServer
-    @ObservedObject private var bluetooth = BluetoothHandsFreeController.shared
     @Environment(\.colorScheme) private var colorScheme
     @State private var selectedTab: RelayTab = .transfer
     @State private var host = ""
@@ -133,6 +132,7 @@ struct CompanionView: View {
     @State private var newSmsText = ""
     @State private var dialerNumber = ""
     @State private var callDurationSeconds = 0
+    @State private var isSpeakerOn = false
 
     private let relayGreen = Color(red: 0.14, green: 0.36, blue: 0.31)
 
@@ -865,19 +865,10 @@ struct CompanionView: View {
 
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
-                        Text("INCOMING CALL")
+                        Text("INCOMING CALL (WI-FI)")
                             .font(.system(size: 9, weight: .bold))
                             .tracking(0.8)
                             .foregroundStyle(.green)
-                        if bluetooth.isAudioRoutedToMac {
-                            HStack(spacing: 3) {
-                                Image(systemName: "speaker.wave.2.fill")
-                                    .font(.system(size: 8))
-                                Text("Mac Speaker")
-                                    .font(.system(size: 8, weight: .semibold))
-                            }
-                            .foregroundStyle(.secondary)
-                        }
                     }
                     Text(call.callerName)
                         .font(.headline)
@@ -922,9 +913,27 @@ struct CompanionView: View {
                 }
                 .buttonStyle(.plain)
 
+                // Answer on Speakerphone Button
+                Button {
+                    isSpeakerOn = true
+                    server.answerCall(speaker: true)
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "speaker.wave.2.fill")
+                        Text("Speaker")
+                    }
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Color.green)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 6)
+                    .background(Capsule().strokeBorder(Color.green, lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+
                 // Answer Button
                 Button {
-                    server.answerCall()
+                    isSpeakerOn = false
+                    server.answerCall(speaker: false)
                 } label: {
                     HStack(spacing: 4) {
                         Image(systemName: "phone.fill")
@@ -972,31 +981,21 @@ struct CompanionView: View {
 
                 Spacer()
 
-                // Mute Microphone
+                // Toggle Speakerphone on Phone over Wi-Fi
                 Button {
-                    bluetooth.toggleMute()
+                    isSpeakerOn.toggle()
+                    server.setSpeakerphone(on: isSpeakerOn)
                 } label: {
-                    Image(systemName: bluetooth.isMuted ? "mic.slash.fill" : "mic.fill")
-                        .font(.system(size: 12, weight: .bold))
-                        .foregroundStyle(bluetooth.isMuted ? Color.red : Color.primary)
-                        .frame(width: 30, height: 30)
-                        .background(Circle().fill(Color.secondary.opacity(0.12)))
-                }
-                .buttonStyle(.plain)
-
-                // Audio Output Toggle
-                Button {
-                    if bluetooth.isAudioRoutedToMac {
-                        bluetooth.routeAudioToPhone()
-                    } else {
-                        bluetooth.routeAudioToMac()
+                    HStack(spacing: 4) {
+                        Image(systemName: isSpeakerOn ? "speaker.wave.3.fill" : "speaker.wave.1")
+                        Text(isSpeakerOn ? "Speaker On" : "Speaker Off")
+                            .font(.caption2.weight(.medium))
                     }
-                } label: {
-                    Image(systemName: bluetooth.isAudioRoutedToMac ? "speaker.wave.3.fill" : "iphone")
-                        .font(.system(size: 12, weight: .bold))
-                        .foregroundStyle(bluetooth.isAudioRoutedToMac ? Color.green : Color.primary)
-                        .frame(width: 30, height: 30)
-                        .background(Circle().fill(Color.secondary.opacity(0.12)))
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(isSpeakerOn ? Color.green : Color.primary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .background(Capsule().fill(Color.secondary.opacity(0.12)))
                 }
                 .buttonStyle(.plain)
 
@@ -1025,51 +1024,28 @@ struct CompanionView: View {
     // MARK: - Calls Tab View
     private var callsTabView: some View {
         VStack(alignment: .leading, spacing: 16) {
-            // 1. Hands-Free Audio Status Banner
+            // 1. Wi-Fi Call Companion Status Banner
             HStack(spacing: 12) {
-                Image(systemName: bluetooth.isAudioRoutedToMac ? "speaker.wave.3.fill" : "airpodsmax")
+                Image(systemName: "wifi")
                     .font(.system(size: 18))
-                    .foregroundStyle(bluetooth.isAudioRoutedToMac ? Color.green : (bluetooth.isBluetoothPaired ? relayGreen : Color.secondary))
+                    .foregroundStyle(relayGreen)
                     .frame(width: 36, height: 36)
-                    .background(RoundedRectangle(cornerRadius: 8).fill(Color.secondary.opacity(0.1)))
+                    .background(RoundedRectangle(cornerRadius: 8).fill(relayGreen.opacity(0.12)))
 
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 4) {
-                        Text(bluetooth.isAudioRoutedToMac ? "Mac Speaker & Mic Active" : (bluetooth.isBluetoothPaired ? "Mac Hands-Free Audio Ready" : "Mac Audio Bridge"))
+                        Text("Local Wi-Fi Call Companion")
                             .font(.subheadline.weight(.semibold))
-                        if bluetooth.isBluetoothPaired {
-                            Image(systemName: "checkmark.circle.fill")
-                                .font(.caption)
-                                .foregroundStyle(.green)
-                        }
+                        Image(systemName: "lock.shield.fill")
+                            .font(.caption2)
+                            .foregroundStyle(relayGreen)
                     }
-                    Text(bluetooth.statusMessage)
+                    Text("100% P2P over your local network · Zero Bluetooth needed")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
 
                 Spacer()
-
-                if bluetooth.isBluetoothPaired {
-                    Button(bluetooth.isAudioRoutedToMac ? "Handoff to Phone" : "Connect Mac Audio") {
-                        if bluetooth.isAudioRoutedToMac {
-                            bluetooth.routeAudioToPhone()
-                        } else {
-                            bluetooth.connectHandsFree()
-                            bluetooth.routeAudioToMac()
-                        }
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                } else {
-                    Button("Pair Bluetooth") {
-                        if let url = URL(string: "x-apple.systempreferences:com.apple.BluetoothSettings") {
-                            NSWorkspace.shared.open(url)
-                        }
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                }
             }
             .padding(12)
             .background(RoundedRectangle(cornerRadius: 10).fill(Color.secondary.opacity(0.06)))

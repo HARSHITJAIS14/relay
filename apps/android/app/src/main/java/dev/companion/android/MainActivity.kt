@@ -708,9 +708,6 @@ class MainActivity : Activity() {
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                         perms.add(android.Manifest.permission.ANSWER_PHONE_CALLS)
                     }
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                        perms.add(android.Manifest.permission.BLUETOOTH_CONNECT)
-                    }
                     requestPermissions(perms.toTypedArray(), 102)
                 }
             }

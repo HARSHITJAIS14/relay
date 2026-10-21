@@ -846,13 +846,26 @@ class PeerClient(private val context: Context) {
                     Log.i(TAG, "Mac acknowledged messages receipt: ${ack.optString("type")}")
                 }
                 "call.answer" -> {
-                    Log.i(TAG, "Received call.answer command from Mac")
+                    val speaker = response.optBoolean("speaker", false)
+                    Log.i(TAG, "Received call.answer command from Mac (speaker=$speaker)")
                     val callController = RelayCallController(context)
-                    val ok = callController.answerCall()
+                    val ok = callController.answerCall(useSpeakerphone = speaker)
                     channel.send(json(
                         "type" to "call.action_receipt",
                         "action" to "answer",
                         "status" to (if (ok) "ok" else "failed")
+                    ))
+                    channel.receive()
+                }
+                "call.speaker" -> {
+                    val on = response.optBoolean("on", true)
+                    Log.i(TAG, "Received call.speaker command from Mac (on=$on)")
+                    val callController = RelayCallController(context)
+                    callController.setSpeakerphone(on)
+                    channel.send(json(
+                        "type" to "call.action_receipt",
+                        "action" to "speaker",
+                        "status" to "ok"
                     ))
                     channel.receive()
                 }
