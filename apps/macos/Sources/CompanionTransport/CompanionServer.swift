@@ -549,6 +549,41 @@ public final class CompanionServer: ObservableObject {
         }
     }
 
+    public func answerCall() {
+        queueCommand(WireMessage(type: "call.answer"))
+        if let current = activeCall {
+            activeCall = ActiveCall(callId: current.callId, number: current.number, callerName: current.callerName, state: "OFFHOOK", timestamp: current.timestamp)
+        }
+        BluetoothHandsFreeController.shared.acceptCall()
+    }
+
+    public func rejectCall() {
+        queueCommand(WireMessage(type: "call.reject"))
+        activeCall = nil
+        BluetoothHandsFreeController.shared.endCall()
+    }
+
+    public func endCall() {
+        queueCommand(WireMessage(type: "call.end"))
+        activeCall = nil
+        BluetoothHandsFreeController.shared.endCall()
+    }
+
+    public func declineCallWithSms(number: String, message: String) {
+        let trimmedMsg = message.trimmingCharacters(in: .whitespacesAndNewlines)
+        queueCommand(WireMessage(type: "call.decline_with_sms", message: trimmedMsg, number: number))
+        activeCall = nil
+        BluetoothHandsFreeController.shared.endCall()
+    }
+
+    public func dialNumber(_ number: String) {
+        let trimmed = number.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        queueCommand(WireMessage(type: "call.dial", number: trimmed))
+        activeCall = ActiveCall(callId: UUID().uuidString.lowercased(), number: trimmed, callerName: trimmed, state: "OFFHOOK", timestamp: Int64(Date().timeIntervalSince1970 * 1000))
+        BluetoothHandsFreeController.shared.routeAudioToMac()
+    }
+
     public func dismissCall() {
         activeCall = nil
     }
@@ -759,11 +794,14 @@ public final class CompanionServer: ObservableObject {
             if callState == "RINGING" {
                 activeCall = ActiveCall(callId: callId, number: number, callerName: caller, state: "RINGING", timestamp: timestamp)
                 postMacNotification(title: "Incoming Call", body: "\(caller) (\(number))")
+            } else if callState == "OFFHOOK" {
+                activeCall = ActiveCall(callId: callId, number: number, callerName: caller, state: "OFFHOOK", timestamp: timestamp)
             } else if callState == "MISSED" {
                 activeCall = nil
                 postMacNotification(title: "Missed Call", body: "\(caller) (\(number))")
-            } else if callState == "IDLE" || callState == "OFFHOOK" {
+            } else if callState == "IDLE" {
                 activeCall = nil
+                BluetoothHandsFreeController.shared.routeAudioToPhone()
             }
             try await channel.sendMessage(WireMessage(type: "call.receipt"))
         case "command.poll":
@@ -805,6 +843,12 @@ public final class CompanionServer: ObservableObject {
                     let receipt = try await channel.receiveMessage()
                     if receipt.type == "notification.reply_ack" {
                         lastTransfer = "Reply delivered to phone"
+                    }
+                    try await channel.sendMessage(WireMessage(type: "ok"))
+                } else if cmd.type == "call.answer" || cmd.type == "call.reject" || cmd.type == "call.end" || cmd.type == "call.dial" || cmd.type == "call.decline_with_sms" {
+                    let receipt = try await channel.receiveMessage()
+                    if receipt.type == "call.action_receipt" {
+                        lastTransfer = "Call action executed on phone"
                     }
                     try await channel.sendMessage(WireMessage(type: "ok"))
                 }

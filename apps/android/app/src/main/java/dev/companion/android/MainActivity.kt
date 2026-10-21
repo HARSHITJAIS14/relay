@@ -696,17 +696,22 @@ class MainActivity : Activity() {
                     LinearLayout.LayoutParams.WRAP_CONTENT
                 )
                 setOnClickListener {
-                    requestPermissions(
-                        arrayOf(
-                            android.Manifest.permission.READ_SMS,
-                            android.Manifest.permission.SEND_SMS,
-                            android.Manifest.permission.RECEIVE_SMS,
-                            android.Manifest.permission.READ_CONTACTS,
-                            android.Manifest.permission.READ_PHONE_STATE,
-                            android.Manifest.permission.READ_CALL_LOG
-                        ),
-                        102
+                    val perms = mutableListOf(
+                        android.Manifest.permission.READ_SMS,
+                        android.Manifest.permission.SEND_SMS,
+                        android.Manifest.permission.RECEIVE_SMS,
+                        android.Manifest.permission.READ_CONTACTS,
+                        android.Manifest.permission.READ_PHONE_STATE,
+                        android.Manifest.permission.READ_CALL_LOG,
+                        android.Manifest.permission.CALL_PHONE
                     )
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        perms.add(android.Manifest.permission.ANSWER_PHONE_CALLS)
+                    }
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                        perms.add(android.Manifest.permission.BLUETOOTH_CONNECT)
+                    }
+                    requestPermissions(perms.toTypedArray(), 102)
                 }
             }
             addView(smsCallPermsBtn)
@@ -899,8 +904,10 @@ class MainActivity : Activity() {
 
         val hasSms = SmsManagerHelper.hasSmsPermissions(this)
         val hasPhone = checkSelfPermission(android.Manifest.permission.READ_PHONE_STATE) == PackageManager.PERMISSION_GRANTED
-        smsCallPermsBtn.text = if (hasSms && hasPhone) "SMS & Call Alerts: Granted ✓" else "Grant SMS & Call Permissions"
-        smsCallPermsBtn.setTextColor(if (hasSms && hasPhone) Color.parseColor("#15803D") else Color.parseColor("#172C29"))
+        val hasCalls = RelayCallController.hasCallPermissions(this)
+        val allGranted = hasSms && hasPhone && hasCalls
+        smsCallPermsBtn.text = if (allGranted) "SMS, Calls & Audio: Active ✓" else "Grant SMS, Call & Audio Permissions"
+        smsCallPermsBtn.setTextColor(if (allGranted) Color.parseColor("#15803D") else Color.parseColor("#172C29"))
     }
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
