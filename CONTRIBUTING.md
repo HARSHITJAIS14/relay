@@ -22,3 +22,10 @@ Before a release:
 
 The current packages use development signing. Preserve the Android signing key for upgrade
 compatibility. Developer ID signing/notarization and store distribution require separate setup.
+
+Mac preview signing uses a persistent certificate in `.tooling/macos-signing/`. Retain and
+securely back up this ignored folder; it contains a private signing key and generated password.
+Never commit or attach its contents to a release. `tools/setup_dev_signing.py` is idempotent.
+The packager temporarily opens that build-only keychain for signing and restores the original
+Keychain search list afterward. It does not install a trusted root. For public distribution,
+configure an Apple Developer ID identity and notarization separately.

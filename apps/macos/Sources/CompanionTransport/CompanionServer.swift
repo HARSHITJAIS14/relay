@@ -180,6 +180,7 @@ public final class CompanionServer: ObservableObject {
     @Published public private(set) var lastTransfer = ""
     @Published public private(set) var transferProgress: TransferProgress?
     @Published public private(set) var fingerprint = ""
+    @Published public private(set) var needsConnectionApproval = false
     @Published public private(set) var inbox: [InboxItem] = []
     @Published public private(set) var notifications: [MirroredNotification] = []
     @Published public private(set) var smsThreads: [SmsThread] = []
@@ -237,7 +238,11 @@ public final class CompanionServer: ObservableObject {
         launchAtLogin = (SMAppService.mainApp.status == .enabled)
     }
 
-    public func start() async {
+    public func allowSecureConnection() async {
+        await start(allowKeychainInteraction: true)
+    }
+
+    public func start(allowKeychainInteraction: Bool = false) async {
         guard listener == nil, !starting else { return }
         starting = true
         defer { starting = false }
@@ -254,7 +259,8 @@ public final class CompanionServer: ObservableObject {
                 store = peerStore
                 inbox = (try? await peerStore.getInboxItems()) ?? []
             }
-            let identity = try await Task.detached { try LocalIdentity.load() }.value
+            let identity = try await Task.detached { try LocalIdentity.load(allowUserInteraction: allowKeychainInteraction) }.value
+            needsConnectionApproval = false
             fingerprint = identity.fingerprint
             gate.update(peer: trusted?.fingerprint, until: expires)
             let tls = NWProtocolTLS.Options()
@@ -301,6 +307,9 @@ public final class CompanionServer: ObservableObject {
             if trusted == nil, let ip = Self.detectLocalIP() {
                 createInvitation(host: ip)
             }
+        } catch IdentityAccessError.approvalRequired {
+            needsConnectionApproval = true
+            status = "Secure connection needs your approval"
         } catch { status = error.localizedDescription }
     }
 

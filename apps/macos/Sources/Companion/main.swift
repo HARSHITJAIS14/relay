@@ -161,6 +161,23 @@ struct CompanionView: View {
                     }
                 }
 
+                if server.needsConnectionApproval {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Label("Allow your secure connection", systemImage: "lock.shield")
+                            .font(.headline)
+                        Text("Relay keeps a private connection key in your Mac’s Keychain so your phone can recognize this Mac. macOS may ask for your Mac password to allow access to that key.")
+                            .font(.callout)
+                        Text("Your password is handled by macOS and is not shared with Relay. Your existing pairing stays the same.")
+                            .font(.caption).foregroundStyle(.secondary)
+                        Button("Continue") {
+                            Task { await server.allowSecureConnection() }
+                        }
+                        .buttonStyle(.borderedProminent)
+                    }
+                    .padding(14)
+                    .background(RoundedRectangle(cornerRadius: 12).fill(Color.secondary.opacity(0.08)))
+                }
+
                 // Live Incoming Call Banner
                 if let call = server.activeCall, call.state == "RINGING" {
                     HStack(spacing: 12) {

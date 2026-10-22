@@ -8,7 +8,7 @@ Relay brings your Android into your Mac workflow. Send a file, grab a clipboard,
 reply to SMS, and see your phone’s notifications on your Mac.
 Your devices talk directly over local Wi-Fi.
 
-[Download v1.6.1](https://github.com/HARSHITJAIS14/relay/releases/tag/v1.6.1) · [Get started](#get-started) · [Build from source](#build-from-source)
+[Download v1.6.2](https://github.com/HARSHITJAIS14/relay/releases/tag/v1.6.2) · [Get started](#get-started) · [Build from source](#build-from-source)
 
 </div>
 
@@ -38,14 +38,14 @@ QR scanning uses Google Play services; you can also paste a pairing invitation l
 
 ## Downloads & current status
 
-[Download v1.6.1](https://github.com/HARSHITJAIS14/relay/releases/tag/v1.6.1), featuring file transfers, one-tap clipboard sync, SMS, and notification mirroring.
+[Download v1.6.2](https://github.com/HARSHITJAIS14/relay/releases/tag/v1.6.2), featuring file transfers, one-tap clipboard sync, SMS, and notification mirroring.
 
 | Platform | Package |
 | --- | --- |
-| macOS (Apple Silicon) | [Relay-v1.6.1.dmg](https://github.com/HARSHITJAIS14/relay/releases/download/v1.6.1/Relay-v1.6.1.dmg) |
-| Android | [Relay-v1.6.1.apk](https://github.com/HARSHITJAIS14/relay/releases/download/v1.6.1/Relay-v1.6.1.apk) |
+| macOS (Apple Silicon) | [Relay-v1.6.2.dmg](https://github.com/HARSHITJAIS14/relay/releases/download/v1.6.2/Relay-v1.6.2.dmg) |
+| Android | [Relay-v1.6.2.apk](https://github.com/HARSHITJAIS14/relay/releases/download/v1.6.2/Relay-v1.6.2.apk) |
 
-### Included in v1.6.1
+### Included in v1.6.2
 
 - **Files:** send in either direction, with preparation feedback, live percentage and byte counts, reconnection, and integrity checks.
 - **Clipboard:** one **Sync** action handles sending and receiving. No direction picker.
@@ -62,7 +62,15 @@ Relay is an early project. Current limits are part of the deal:
 - **Local network required.** Guest Wi-Fi, client isolation, firewalls, and sleeping devices can prevent connections.
 - **Clipboard access depends on Android.** Use the app, share sheet, or Quick Settings tile when background clipboard access is restricted. Applying Mac clipboard updates automatically is an optional Android setting.
 - **Build targets:** macOS 13+ and Android 10+. Existing device testing covers an Apple Silicon Mac and an Android 16 phone; that does not establish compatibility with every supported OS or Intel Macs.
-- **Development distribution:** the Mac packaging script uses local or ad-hoc signing, and the Android build below produces a debug APK. These are not notarized Mac or Play Store releases.
+- **Development distribution:** the Mac preview uses a persistent local signing identity, and the Android build below produces a debug APK. These are not notarized Mac or Play Store releases.
+
+## Secure connection approval on Mac
+
+Relay stores its private device-connection key in Keychain as **Relay secure device connection**.
+If macOS needs permission to use that key, Relay first explains the request and waits for you
+to select **Continue**. Enter your Mac password only in the macOS Keychain dialog; Relay does
+not receive that password. An upgrade from an older preview may require one approval while
+preserving the same device identity and pairing. Declining leaves the connection paused.
 
 ## Private by design
 
@@ -82,12 +90,16 @@ Install Xcode Command Line Tools with a Swift 6 toolchain, then run from the rep
 
 ```sh
 swift test --package-path apps/macos
+python3 tools/setup_dev_signing.py  # once, for a persistent preview signing identity
 python3 tools/package_macos.py
 open apps/macos/.build/Relay.app
 ```
 
-The bundle is built for the host architecture. The packaging script uses a local signing
-identity if configured, or falls back to ad-hoc signing.
+The bundle is built for the host architecture. Set `RELAY_SIGNING_IDENTITY` to a Developer ID
+identity for distribution. Preview builds use a persistent signing identity in the ignored
+`.tooling/macos-signing/` folder; keep that folder private and retain it across builds.
+The packager requires consistent signing. `--allow-adhoc` is available only for disposable
+local builds and may cause repeated Keychain prompts. Preview signing is not notarization.
 
 ### Android
 
