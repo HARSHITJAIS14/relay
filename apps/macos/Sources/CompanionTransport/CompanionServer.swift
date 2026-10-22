@@ -247,6 +247,7 @@ public final class CompanionServer: ObservableObject {
             if FileManager.default.fileExists(atPath: peerFile.path) {
                 trusted = try JSONDecoder().decode(TrustedPeer.self, from: Data(contentsOf: peerFile))
                 peerName = trusted?.name
+                BluetoothHandsFreeController.shared.refreshDevices(peerNameHint: trusted?.name)
             }
             if let trusted {
                 let peerStore = try TransferStore(root: root.appendingPathComponent(trusted.fingerprint), receiveFolder: receiveFolder)
@@ -402,6 +403,7 @@ public final class CompanionServer: ObservableObject {
                 self.inbox = (try? await peerStore.getInboxItems()) ?? []
             }
             peerName = peer.name
+            BluetoothHandsFreeController.shared.refreshDevices(peerNameHint: peer.name)
             invitationToken = nil
             invitation = ""
             self.pending = nil

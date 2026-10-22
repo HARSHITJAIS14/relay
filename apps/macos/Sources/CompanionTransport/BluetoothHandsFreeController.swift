@@ -1,6 +1,7 @@
 import Foundation
 import IOBluetooth
 import OSLog
+import AppKit
 
 private let logger = Logger(subsystem: "dev.companion", category: "bluetooth")
 
@@ -14,6 +15,7 @@ public final class BluetoothHandsFreeController: NSObject, ObservableObject {
     @Published public private(set) var isMuted: Bool = false
     @Published public private(set) var pairedDeviceName: String? = nil
     @Published public private(set) var statusMessage: String = "Ready"
+    @Published public private(set) var availablePhones: [String] = []
 
     private var targetDevice: IOBluetoothDevice?
     private var handsFree: IOBluetoothHandsFreeDevice?
@@ -23,57 +25,97 @@ public final class BluetoothHandsFreeController: NSObject, ObservableObject {
         refreshDevices()
     }
 
-    public func refreshDevices(hint: String? = nil) {
+    public func refreshDevices(hint: String?) {
+        refreshDevices(peerNameHint: hint)
+    }
+
+    public func refreshDevices(peerNameHint: String? = nil) {
         guard let paired = IOBluetoothDevice.pairedDevices() as? [IOBluetoothDevice] else {
             isBluetoothPaired = false
             pairedDeviceName = nil
+            availablePhones = []
             statusMessage = "No Bluetooth devices paired"
             return
         }
 
-        // Search for device matching phone name hint or Android device signatures
+        var candidatePhones: [IOBluetoothDevice] = []
         var matched: IOBluetoothDevice? = nil
+
         for dev in paired {
             let name = dev.nameOrAddress ?? ""
-            if let h = hint, !h.isEmpty, name.localizedCaseInsensitiveContains(h) {
+            let major = dev.deviceClassMajor // 2 = Phone, 4 = Audio (headphones/speakers)
+
+            // CRITICAL: Audio peripherals (headphones, earbuds, headsets, speakers) are audio OUTPUTS, never the phone!
+            if major == 4 ||
+               name.localizedCaseInsensitiveContains("buds") ||
+               name.localizedCaseInsensitiveContains("airpods") ||
+               name.localizedCaseInsensitiveContains("airdopes") ||
+               name.localizedCaseInsensitiveContains("flip") ||
+               name.localizedCaseInsensitiveContains("headphone") ||
+               name.localizedCaseInsensitiveContains("headset") ||
+               name.localizedCaseInsensitiveContains("speaker") ||
+               name.localizedCaseInsensitiveContains("mouse") ||
+               name.localizedCaseInsensitiveContains("keyboard") ||
+               name.localizedCaseInsensitiveContains("trackpad") {
+                continue
+            }
+
+            candidatePhones.append(dev)
+
+            // 1. Match by peer name from Relay Wi-Fi pairing (e.g. "I2217" or phone model)
+            if let hint = peerNameHint, !hint.isEmpty,
+               (name.localizedCaseInsensitiveContains(hint) || hint.localizedCaseInsensitiveContains(name)) {
                 matched = dev
                 break
             }
-            if name.localizedCaseInsensitiveContains("iQOO") ||
-               name.localizedCaseInsensitiveContains("Pixel") ||
-               name.localizedCaseInsensitiveContains("Samsung") ||
-               name.localizedCaseInsensitiveContains("Phone") ||
-               name.localizedCaseInsensitiveContains("Android") ||
-               name.localizedCaseInsensitiveContains("OnePlus") ||
-               name.localizedCaseInsensitiveContains("Xiaomi") {
+
+            // 2. Match by Bluetooth Major Class 2 (Phone)
+            if major == 2 {
+                if matched == nil {
+                    matched = dev
+                }
+            }
+
+            // 3. Match known phone brands
+            if matched == nil && (
+                name.localizedCaseInsensitiveContains("iQOO") ||
+                name.localizedCaseInsensitiveContains("Pixel") ||
+                name.localizedCaseInsensitiveContains("Galaxy") ||
+                name.localizedCaseInsensitiveContains("Phone")
+            ) {
                 matched = dev
-                break
             }
         }
 
-        // Fallback: If only one paired device and it's not a mouse/keyboard
-        if matched == nil {
-            for dev in paired {
-                let name = dev.nameOrAddress ?? ""
-                if !name.localizedCaseInsensitiveContains("mouse") &&
-                   !name.localizedCaseInsensitiveContains("keyboard") &&
-                   !name.localizedCaseInsensitiveContains("trackpad") {
-                    matched = dev
-                    break
-                }
-            }
-        }
+        self.availablePhones = candidatePhones.compactMap { $0.nameOrAddress }
 
         if let dev = matched {
             self.targetDevice = dev
             self.pairedDeviceName = dev.nameOrAddress
             self.isBluetoothPaired = true
             self.statusMessage = "Paired with \(dev.nameOrAddress ?? "Phone")"
-            logger.info("Found paired Bluetooth device: \(dev.nameOrAddress ?? "", privacy: .public)")
+            logger.info("Found paired Bluetooth phone: \(dev.nameOrAddress ?? "", privacy: .public)")
         } else {
-            self.isBluetoothPaired = false
+            self.targetDevice = nil
             self.pairedDeviceName = nil
+            self.isBluetoothPaired = false
             self.statusMessage = "Phone not paired via Mac Bluetooth"
+        }
+    }
+
+    public func selectDevice(name: String) {
+        guard let paired = IOBluetoothDevice.pairedDevices() as? [IOBluetoothDevice] else { return }
+        if let dev = paired.first(where: { ($0.nameOrAddress ?? "") == name }) {
+            self.targetDevice = dev
+            self.pairedDeviceName = dev.nameOrAddress
+            self.isBluetoothPaired = true
+            self.statusMessage = "Selected \(dev.nameOrAddress ?? "Phone")"
+        }
+    }
+
+    public func openBluetoothSettings() {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.BluetoothSettings") {
+            NSWorkspace.shared.open(url)
         }
     }
 
