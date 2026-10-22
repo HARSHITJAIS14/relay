@@ -80,9 +80,24 @@ class RelayCallController(private val context: Context) {
      */
     fun setSpeakerphone(on: Boolean) {
         try {
-            val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return
             Log.i(TAG, "Request to toggle speakerphone to $on (SDK=${Build.VERSION.SDK_INT})")
 
+            // 1. Telecom InCallService route (first-class for active phone calls)
+            if (RelayInCallService.hasActiveService()) {
+                val ok = RelayInCallService.setSpeaker(on)
+                if (ok) {
+                    Log.i(TAG, "Speakerphone toggled via RelayInCallService: $on")
+                }
+            }
+
+            // 2. Direct ongoing call notification action trigger (Google Dialer, Samsung, Vivo, etc.)
+            val notifOk = RelayNotificationListenerService.setSpeaker(on)
+            if (notifOk) {
+                Log.i(TAG, "Speakerphone toggled via RelayNotificationListenerService: $on")
+            }
+
+            // 3. Also configure AudioManager as fallback/secondary
+            val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 if (on) {
                     audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
@@ -120,6 +135,23 @@ class RelayCallController(private val context: Context) {
      */
     fun endCall(): Boolean {
         Log.i(TAG, "Request to end/reject call received")
+
+        // 1. First-class: RelayInCallService if bound
+        if (RelayInCallService.hasActiveService()) {
+            val ended = RelayInCallService.endCall()
+            if (ended) {
+                Log.i(TAG, "Call disconnected via RelayInCallService")
+                return true
+            }
+        }
+
+        // 2. Ongoing call notification Hang Up action
+        val notifEnded = RelayNotificationListenerService.endCall()
+        if (notifEnded) {
+            Log.i(TAG, "Call disconnected via RelayNotificationListenerService action")
+            return true
+        }
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             if (context.checkSelfPermission(android.Manifest.permission.ANSWER_PHONE_CALLS) == PackageManager.PERMISSION_GRANTED) {
                 try {
