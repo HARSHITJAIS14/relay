@@ -796,7 +796,7 @@ public final class CompanionServer: ObservableObject {
             lastTransfer = "SMS dispatched from phone"
             try await channel.sendMessage(WireMessage(type: "ok"))
         case "call.state":
-            let callState = request.state ?? "IDLE"
+            let callState = (request.state ?? "IDLE").trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
             let caller = (request.callerName?.isEmpty == false ? request.callerName : request.number) ?? "Unknown Caller"
             let number = request.number ?? ""
             let callId = request.callId ?? UUID().uuidString.lowercased()
@@ -806,7 +806,17 @@ public final class CompanionServer: ObservableObject {
                 BluetoothHandsFreeController.shared.refreshDevices(hint: caller)
                 postMacNotification(title: "Incoming Call", body: "\(caller) (\(number))")
             } else if callState == "OFFHOOK" {
-                activeCall = ActiveCall(callId: callId, number: number, callerName: caller, state: "OFFHOOK", timestamp: timestamp)
+                if let existing = activeCall {
+                    activeCall = ActiveCall(
+                        callId: existing.callId,
+                        number: (existing.number.isEmpty || existing.number == "Unknown") ? number : existing.number,
+                        callerName: (existing.callerName.isEmpty || existing.callerName == "Unknown") ? caller : existing.callerName,
+                        state: "OFFHOOK",
+                        timestamp: timestamp
+                    )
+                } else {
+                    activeCall = ActiveCall(callId: callId, number: number, callerName: caller, state: "OFFHOOK", timestamp: timestamp)
+                }
             } else if callState == "MISSED" {
                 activeCall = nil
                 BluetoothHandsFreeController.shared.routeAudioToPhone()

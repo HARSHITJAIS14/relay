@@ -151,8 +151,8 @@ public final class BluetoothHandsFreeController: NSObject, ObservableObject {
         logger.info("Routing call audio to Mac speakers & microphone")
         hf.connectSCO()
         hf.transferAudioToComputer()
-        isAudioRoutedToMac = true
-        statusMessage = "Audio routed to Mac"
+        isAudioRoutedToMac = hf.isSCOConnected()
+        statusMessage = isAudioRoutedToMac ? "Audio routed to Mac" : "Connecting audio…"
     }
 
     public func routeAudioToPhone() {

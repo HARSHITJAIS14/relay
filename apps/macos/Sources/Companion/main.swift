@@ -1060,10 +1060,10 @@ struct CompanionView: View {
 
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
-                        Text(bluetooth.isAudioRoutedToMac ? "MAC AUDIO LIVE" : "CALL IN PROGRESS")
+                        Text(isSpeakerOn ? "SPEAKERPHONE LIVE" : "CALL IN PROGRESS")
                             .font(.system(size: 9, weight: .bold))
                             .tracking(0.8)
-                            .foregroundStyle(bluetooth.isAudioRoutedToMac ? .green : .blue)
+                            .foregroundStyle(.green)
                         Text("•")
                             .foregroundStyle(.secondary)
                         Text(formatDuration(callDurationSeconds))
@@ -1081,58 +1081,23 @@ struct CompanionView: View {
 
                 Spacer()
 
-                if bluetooth.isBluetoothPaired {
-                    // Mute Mac Mic
-                    Button {
-                        bluetooth.toggleMute()
-                    } label: {
-                        Image(systemName: bluetooth.isMuted ? "mic.slash.fill" : "mic.fill")
-                            .font(.system(size: 11, weight: .bold))
-                            .foregroundStyle(bluetooth.isMuted ? Color.red : Color.primary)
-                            .frame(width: 30, height: 30)
-                            .background(Circle().fill(Color.secondary.opacity(0.12)))
+                // Toggle Speakerphone on Phone over Wi-Fi
+                Button {
+                    isSpeakerOn.toggle()
+                    server.setSpeakerphone(on: isSpeakerOn)
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: isSpeakerOn ? "speaker.wave.3.fill" : "speaker.wave.1")
+                        Text(isSpeakerOn ? "Speaker On" : "Speaker Off")
+                            .font(.caption2.weight(.medium))
                     }
-                    .buttonStyle(.plain)
-
-                    // Audio Route Toggle (Mac Audio <-> Phone Audio)
-                    Button {
-                        if bluetooth.isAudioRoutedToMac {
-                            bluetooth.routeAudioToPhone()
-                        } else {
-                            bluetooth.routeAudioToMac()
-                        }
-                    } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: bluetooth.isAudioRoutedToMac ? "speaker.wave.3.fill" : "iphone")
-                            Text(bluetooth.isAudioRoutedToMac ? "Mac Audio" : "Phone Audio")
-                                .font(.caption2.weight(.medium))
-                        }
-                        .font(.system(size: 11, weight: .bold))
-                        .foregroundStyle(bluetooth.isAudioRoutedToMac ? Color.green : Color.primary)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 5)
-                        .background(Capsule().fill(Color.secondary.opacity(0.12)))
-                    }
-                    .buttonStyle(.plain)
-                } else {
-                    // Toggle Speakerphone on Phone over Wi-Fi
-                    Button {
-                        isSpeakerOn.toggle()
-                        server.setSpeakerphone(on: isSpeakerOn)
-                    } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: isSpeakerOn ? "speaker.wave.3.fill" : "speaker.wave.1")
-                            Text(isSpeakerOn ? "Speaker On" : "Speaker Off")
-                                .font(.caption2.weight(.medium))
-                        }
-                        .font(.system(size: 11, weight: .bold))
-                        .foregroundStyle(isSpeakerOn ? Color.green : Color.primary)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 5)
-                        .background(Capsule().fill(Color.secondary.opacity(0.12)))
-                    }
-                    .buttonStyle(.plain)
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(isSpeakerOn ? Color.green : Color.primary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .background(Capsule().fill(Color.secondary.opacity(0.12)))
                 }
+                .buttonStyle(.plain)
 
                 // End Button
                 Button {
@@ -1161,8 +1126,8 @@ struct CompanionView: View {
                 .buttonStyle(.plain)
             }
             .padding(12)
-            .background(RoundedRectangle(cornerRadius: 12).fill(Color.blue.opacity(0.08)))
-            .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.blue.opacity(0.25), lineWidth: 1))
+            .background(RoundedRectangle(cornerRadius: 12).fill(Color.green.opacity(0.08)))
+            .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.green.opacity(0.25), lineWidth: 1))
         }
     }
 
@@ -1170,121 +1135,42 @@ struct CompanionView: View {
     private var callsTabView: some View {
         VStack(alignment: .leading, spacing: 16) {
             // 1. Audio & Call Companion Status Card
-            if bluetooth.isBluetoothPaired {
-                HStack(spacing: 12) {
-                    Image(systemName: bluetooth.isAudioRoutedToMac ? "speaker.wave.3.fill" : "iphone")
-                        .font(.system(size: 18))
-                        .foregroundStyle(bluetooth.isAudioRoutedToMac ? Color.green : relayGreen)
-                        .frame(width: 36, height: 36)
-                        .background(RoundedRectangle(cornerRadius: 8).fill(bluetooth.isAudioRoutedToMac ? Color.green.opacity(0.12) : relayGreen.opacity(0.12)))
+            HStack(spacing: 12) {
+                Image(systemName: isSpeakerOn ? "speaker.wave.3.fill" : "phone.arrow.up.right.fill")
+                    .font(.system(size: 18))
+                    .foregroundStyle(relayGreen)
+                    .frame(width: 36, height: 36)
+                    .background(RoundedRectangle(cornerRadius: 8).fill(relayGreen.opacity(0.12)))
 
-                    VStack(alignment: .leading, spacing: 2) {
-                        HStack(spacing: 4) {
-                            Text(bluetooth.isAudioRoutedToMac ? "Mac Mic & Speakers Live" : "Mac Audio Bridge Ready")
-                                .font(.subheadline.weight(.semibold))
-                            Image(systemName: "checkmark.circle.fill")
-                                .font(.caption2)
-                                .foregroundStyle(.green)
-                        }
-                        Text(bluetooth.isAudioRoutedToMac ? "Cellular call audio streaming through Mac speakers" : "Paired with \(bluetooth.pairedDeviceName ?? "Phone") · Calls route to Mac")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 4) {
+                        Text(isSpeakerOn ? "Phone Speakerphone Active" : "Cellular Call Companion")
+                            .font(.subheadline.weight(.semibold))
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.caption2)
+                            .foregroundStyle(.green)
                     }
-
-                    Spacer()
-
-                    Button(bluetooth.isAudioRoutedToMac ? "Handoff to Phone" : "Connect Mac Audio") {
-                        if bluetooth.isAudioRoutedToMac {
-                            bluetooth.routeAudioToPhone()
-                        } else {
-                            bluetooth.connectHandsFree()
-                            bluetooth.routeAudioToMac()
-                        }
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
+                    Text(isSpeakerOn ? "Audio hands-free on phone speaker" : "Dial & control calls from Mac · Talk via phone / headset")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
-                .padding(12)
-                .background(RoundedRectangle(cornerRadius: 10).fill(Color.secondary.opacity(0.06)))
-            } else {
-                VStack(alignment: .leading, spacing: 10) {
-                    HStack(spacing: 12) {
-                        Image(systemName: "antenna.radiowaves.left.and.right")
-                            .font(.system(size: 18))
-                            .foregroundStyle(relayGreen)
-                            .frame(width: 36, height: 36)
-                            .background(RoundedRectangle(cornerRadius: 8).fill(relayGreen.opacity(0.12)))
 
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Connect Phone for Mac Audio")
-                                .font(.subheadline.weight(.semibold))
-                            Text("Wi-Fi call control is active · Pair Bluetooth to speak & listen through Mac")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
+                Spacer()
 
-                        Spacer()
-
-                        Button("Open Mac Bluetooth") {
-                            bluetooth.openBluetoothSettings()
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .tint(relayGreen)
-                        .controlSize(.small)
-                    }
-
-                    VStack(alignment: .leading, spacing: 5) {
-                        HStack(alignment: .top, spacing: 6) {
-                            Text("1.")
-                                .font(.caption.weight(.bold))
-                                .foregroundStyle(relayGreen)
-                            Text("Click **Open Mac Bluetooth** above to make your Mac discoverable.")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        HStack(alignment: .top, spacing: 6) {
-                            Text("2.")
-                                .font(.caption.weight(.bold))
-                                .foregroundStyle(relayGreen)
-                            Text("On your phone (\(server.peerName ?? "Android")), open **Settings > Bluetooth > Pair new device** and tap **\(Host.current().localizedName ?? "Mac")**.")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                    .padding(10)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(RoundedRectangle(cornerRadius: 8).fill(Color.secondary.opacity(0.05)))
-
-                    HStack {
-                        Button {
-                            bluetooth.refreshDevices(peerNameHint: server.peerName)
-                        } label: {
-                            Label("Check Bluetooth Connection", systemImage: "arrow.clockwise")
-                                .font(.caption.weight(.medium))
-                        }
-                        .buttonStyle(.plain)
-                        .foregroundStyle(relayGreen)
-
-                        Spacer()
-
-                        if !bluetooth.availablePhones.isEmpty {
-                            Menu {
-                                ForEach(bluetooth.availablePhones, id: \.self) { name in
-                                    Button(name) {
-                                        bluetooth.selectDevice(name: name)
-                                    }
-                                }
-                            } label: {
-                                Text("Select paired device…")
-                                    .font(.caption)
-                            }
-                            .menuStyle(.borderlessButton)
-                        }
+                Button {
+                    isSpeakerOn.toggle()
+                    server.setSpeakerphone(on: isSpeakerOn)
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: isSpeakerOn ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                        Text(isSpeakerOn ? "Earpiece" : "Speaker")
                     }
                 }
-                .padding(12)
-                .background(RoundedRectangle(cornerRadius: 10).fill(Color.secondary.opacity(0.06)))
+                .buttonStyle(.bordered)
+                .controlSize(.small)
             }
+            .padding(12)
+            .background(RoundedRectangle(cornerRadius: 10).fill(Color.secondary.opacity(0.06)))
 
             // 2. Dialer Card
             VStack(spacing: 14) {
