@@ -858,7 +858,9 @@ class PeerClient(private val context: Context) {
                     channel.receive()
                 }
                 "call.speaker" -> {
-                    val on = response.optBoolean("on", true)
+                    val on = if (response.has("on")) response.getBoolean("on")
+                             else if (response.has("speaker")) response.getBoolean("speaker")
+                             else response.optBoolean("canReply", true)
                     Log.i(TAG, "Received call.speaker command from Mac (on=$on)")
                     val callController = RelayCallController(context)
                     callController.setSpeakerphone(on)

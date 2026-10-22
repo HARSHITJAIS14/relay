@@ -3,6 +3,7 @@ package dev.companion.android
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import android.net.Uri
 import android.os.Build
@@ -79,10 +80,36 @@ class RelayCallController(private val context: Context) {
      */
     fun setSpeakerphone(on: Boolean) {
         try {
-            val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
-            audioManager?.mode = AudioManager.MODE_IN_CALL
-            audioManager?.isSpeakerphoneOn = on
-            Log.i(TAG, "Speakerphone set to $on")
+            val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return
+            Log.i(TAG, "Request to toggle speakerphone to $on (SDK=${Build.VERSION.SDK_INT})")
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                if (on) {
+                    audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
+                    val speaker = audioManager.availableCommunicationDevices.firstOrNull {
+                        it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
+                    }
+                    if (speaker != null) {
+                        val success = audioManager.setCommunicationDevice(speaker)
+                        Log.i(TAG, "audioManager.setCommunicationDevice(SPEAKER) returned $success")
+                    } else {
+                        Log.w(TAG, "TYPE_BUILTIN_SPEAKER not found in availableCommunicationDevices")
+                        @Suppress("DEPRECATION")
+                        audioManager.isSpeakerphoneOn = true
+                    }
+                } else {
+                    audioManager.clearCommunicationDevice()
+                    audioManager.mode = AudioManager.MODE_NORMAL
+                    @Suppress("DEPRECATION")
+                    audioManager.isSpeakerphoneOn = false
+                    Log.i(TAG, "audioManager.clearCommunicationDevice() executed")
+                }
+            } else {
+                @Suppress("DEPRECATION")
+                audioManager.mode = if (on) AudioManager.MODE_IN_CALL else AudioManager.MODE_NORMAL
+                @Suppress("DEPRECATION")
+                audioManager.isSpeakerphoneOn = on
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to toggle speakerphone", e)
         }

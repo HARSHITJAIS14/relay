@@ -562,7 +562,7 @@ public final class CompanionServer: ObservableObject {
     }
 
     public func setSpeakerphone(on: Bool) {
-        queueCommand(WireMessage(type: "call.speaker", canReply: on))
+        queueCommand(WireMessage(type: "call.speaker", canReply: on, on: on, speaker: on))
     }
 
     public func rejectCall() {
