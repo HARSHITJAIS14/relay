@@ -18,6 +18,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 class CompanionSyncService : Service() {
     private val executor = Executors.newSingleThreadExecutor()
+    private val commandExecutor = Executors.newSingleThreadExecutor()
     private val handler = Handler(Looper.getMainLooper())
     private val running = AtomicBoolean(true)
     private lateinit var client: PeerClient
@@ -47,6 +48,36 @@ class CompanionSyncService : Service() {
         updateNotification(state, detail)
     }
 
+    private val transferListener: (TransferProgress) -> Unit = { progress ->
+        handler.post { if (running.get()) updateTransferNotification(progress) }
+    }
+
+    private fun updateTransferNotification(progress: TransferProgress) {
+        val active = progress.state != TransferProgress.State.COMPLETED && progress.state != TransferProgress.State.FAILED
+        val title = when (progress.state) {
+            TransferProgress.State.PREPARING -> "Preparing file…"
+            TransferProgress.State.QUEUED -> "Waiting for Mac…"
+            TransferProgress.State.TRANSFERRING -> if (progress.direction == TransferProgress.Direction.SEND) "Sending to Mac · ${progress.percent}%" else "Receiving from Mac · ${progress.percent}%"
+            TransferProgress.State.VERIFYING -> "Verifying file…"
+            TransferProgress.State.COMPLETED -> "File transfer complete"
+            TransferProgress.State.FAILED -> "Transfer interrupted"
+        }
+        val launch = PendingIntent.getActivity(this, 4, Intent(this, MainActivity::class.java),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        val indeterminate = progress.state in listOf(TransferProgress.State.PREPARING, TransferProgress.State.QUEUED, TransferProgress.State.VERIFYING)
+        val notification = Notification.Builder(this, CHANNEL_ID)
+            .setSmallIcon(android.R.drawable.stat_sys_upload)
+            .setContentTitle(title)
+            .setContentText("${progress.name} · ${progress.error ?: progress.formattedSummary}")
+            .setContentIntent(launch)
+            .setOnlyAlertOnce(true)
+            .setOngoing(active)
+            .setAutoCancel(!active)
+            .setProgress(if (active) 100 else 0, progress.percent, indeterminate)
+            .build()
+        getSystemService(NotificationManager::class.java).notify(1003, notification)
+    }
+
     override fun onCreate() {
         super.onCreate()
         coordinator = ConnectionCoordinator.getInstance(applicationContext)
@@ -67,8 +98,10 @@ class CompanionSyncService : Service() {
         }
 
         coordinator.addListener(stateListener)
+        TransferProgressCenter.addListener(transferListener)
         coordinator.triggerRefresh()
         startSyncLoop()
+        startCommandLoop()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -82,10 +115,12 @@ class CompanionSyncService : Service() {
 
     override fun onDestroy() {
         running.set(false)
+        TransferProgressCenter.removeListener(transferListener)
         if (::coordinator.isInitialized) {
             coordinator.removeListener(stateListener)
         }
         executor.shutdownNow()
+        commandExecutor.shutdownNow()
         super.onDestroy()
     }
 
@@ -126,7 +161,6 @@ class CompanionSyncService : Service() {
                         if (captureReq != null) {
                             showCaptureNotification(captureReq.id, captureReq.mode)
                         }
-                        client.pollCompanionCommands()
                         delayMs = 2000L
                     } else if (client.paired) {
                         coordinator.triggerRefresh()
@@ -137,6 +171,30 @@ class CompanionSyncService : Service() {
                 } catch (e: Exception) {
                     coordinator.triggerRefresh()
                     delayMs = 4000L
+                }
+
+                try {
+                    Thread.sleep(delayMs)
+                } catch (e: InterruptedException) {
+                    break
+                }
+            }
+        }
+    }
+
+    private fun startCommandLoop() {
+        commandExecutor.execute {
+            while (running.get()) {
+                var delayMs = 500L
+                try {
+                    if (coordinator.isConnected()) {
+                        client.pollCompanionCommands()
+                        delayMs = 500L
+                    } else {
+                        delayMs = 2500L
+                    }
+                } catch (e: Exception) {
+                    delayMs = 2500L
                 }
 
                 try {

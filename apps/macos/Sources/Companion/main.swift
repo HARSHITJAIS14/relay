@@ -289,6 +289,9 @@ struct CompanionView: View {
                     .padding(.vertical, 2)
 
                     // Tab Contents
+                    if let progress = server.transferProgress {
+                        transferProgressView(progress)
+                    }
                     switch selectedTab {
                     case .transfer:
                         transferTabView
@@ -317,6 +320,29 @@ struct CompanionView: View {
     }
 
     // MARK: - Transfer Tab View
+    private func transferProgressView(_ progress: TransferProgress) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text(progress.title).font(.subheadline.weight(.semibold))
+                Spacer()
+                if progress.stage == .transferring || progress.stage == .completed {
+                    Text("\(progress.percent)%").monospacedDigit()
+                }
+            }
+            Text(progress.name).font(.caption).lineLimit(1).truncationMode(.middle)
+            if progress.stage == .preparing || progress.stage == .verifying {
+                ProgressView().controlSize(.small)
+            } else {
+                ProgressView(value: progress.fraction)
+            }
+            Text(progress.error ?? (progress.stage == .queued ? "Your phone will receive this when connected." : progress.summary))
+                .font(.caption).foregroundStyle(progress.stage == .failed ? Color.red : Color.secondary)
+        }
+        .padding(12)
+        .background(RoundedRectangle(cornerRadius: 10).fill(Color.secondary.opacity(0.08)))
+        .accessibilityElement(children: .combine)
+    }
+
     private var transferTabView: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("FILES").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
@@ -335,7 +361,7 @@ struct CompanionView: View {
                         .foregroundStyle(colorScheme == .dark ? Color(red: 0.55, green: 0.80, blue: 0.69) : relayGreen)
                     Text("Drop a file. It’s on your phone.")
                         .font(.callout.weight(.medium))
-                    Text("Send directly over Wi-Fi · Up to 100 MiB")
+                    Text("Send directly over Wi-Fi · Up to 1 GB")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }

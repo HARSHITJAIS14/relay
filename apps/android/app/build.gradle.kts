@@ -9,8 +9,8 @@ android {
         applicationId = "dev.companion.android"
         minSdk = 29
         targetSdk = 36
-        versionCode = 6
-        versionName = "1.6.0"
+        versionCode = 7
+        versionName = "1.6.1"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     compileOptions {

@@ -25,7 +25,7 @@ import javax.security.auth.x500.X500Principal
 
 private const val TAG = "PeerClient"
 private const val IDENTITY_ALIAS = "companion-phone-v2"
-private const val MAX_FILE = 100L * 1024 * 1024
+private const val MAX_FILE = 1_000_000_000L
 internal fun sha256(bytes: ByteArray) = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
 private fun json(vararg entries: Pair<String, Any>) = JSONObject().put("version", 1).apply {
     entries.forEach { (key, value) -> put(key, value) }
@@ -43,6 +43,7 @@ class PeerClient(private val context: Context) {
     var onTransferProgress: ((TransferProgress) -> Unit)? = null
 
     private fun emitProgress(progress: TransferProgress) {
+        TransferProgressCenter.publish(progress)
         onTransferProgress?.invoke(progress)
     }
 
@@ -121,16 +122,23 @@ class PeerClient(private val context: Context) {
     fun stage(uri: Uri): File {
         check(paired)
         var name = "Shared file"
-        context.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use {
-            if (it.moveToFirst()) name = it.getString(0) ?: name
+        var expectedSize = 0L
+        context.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME, android.provider.OpenableColumns.SIZE), null, null, null)?.use {
+            if (it.moveToFirst()) {
+                name = it.getString(0) ?: name
+                if (!it.isNull(1)) expectedSize = it.getLong(1).coerceAtLeast(0)
+            }
         }
+        require(expectedSize <= MAX_FILE) { "File exceeds the 1 GB limit" }
         name = name.replace("/", "_").replace("\\", "_").replace("\u0000", "_")
         require(name.toByteArray().size <= 180) { "Filename is too long" }
         val id = UUID.randomUUID().toString()
         val directory = File(context.filesDir, "outbox/$pin").apply { mkdirs() }
         val data = File(directory, "$id.data")
+        var size = 0L
+        var lastEmit = 0L
+        emitProgress(TransferProgress(id, name, TransferProgress.Direction.SEND, 0L, expectedSize, TransferProgress.State.PREPARING))
         try {
-            var size = 0L
             val hash = MessageDigest.getInstance("SHA-256")
             context.contentResolver.openInputStream(uri)!!.use { input ->
                 FileOutputStream(data).use { output ->
@@ -139,9 +147,14 @@ class PeerClient(private val context: Context) {
                         val count = input.read(buffer)
                         if (count < 0) break
                         size += count
-                        require(size <= MAX_FILE) { "Development build supports files up to 100 MiB" }
+                        require(size <= MAX_FILE) { "Files up to 1 GB are supported" }
                         hash.update(buffer, 0, count)
                         output.write(buffer, 0, count)
+                        val now = android.os.SystemClock.elapsedRealtime()
+                        if (now - lastEmit >= 200 || size == expectedSize) {
+                            emitProgress(TransferProgress(id, name, TransferProgress.Direction.SEND, size, expectedSize, TransferProgress.State.PREPARING))
+                            lastEmit = now
+                        }
                     }
                     output.fd.sync()
                 }
@@ -150,22 +163,28 @@ class PeerClient(private val context: Context) {
             val offer = json("type" to "file.offer", "id" to id, "name" to name, "size" to size,
                 "sha256" to hash.digest().joinToString("") { "%02x".format(it) })
             FileOutputStream(manifest).use { it.write(offer.toString().toByteArray()); it.fd.sync() }
+            emitProgress(TransferProgress(id, name, TransferProgress.Direction.SEND, 0L, size, TransferProgress.State.QUEUED))
             return manifest
         } catch (error: Exception) {
             data.delete()
+            emitProgress(TransferProgress(id, name, TransferProgress.Direction.SEND, size, expectedSize, TransferProgress.State.FAILED, error.message))
             throw error
         }
     }
 
     fun stageFile(file: File, displayName: String = file.name): File {
         check(paired)
+        require(file.length() <= MAX_FILE) { "File exceeds the 1 GB limit" }
+        val expectedSize = file.length()
         var name = displayName.replace("/", "_").replace("\\", "_").replace("\u0000", "_")
         require(name.toByteArray().size <= 180) { "Filename is too long" }
         val id = UUID.randomUUID().toString()
         val directory = File(context.filesDir, "outbox/$pin").apply { mkdirs() }
         val data = File(directory, "$id.data")
+        var size = 0L
+        var lastEmit = 0L
+        emitProgress(TransferProgress(id, name, TransferProgress.Direction.SEND, 0L, expectedSize, TransferProgress.State.PREPARING))
         try {
-            var size = 0L
             val hash = MessageDigest.getInstance("SHA-256")
             FileInputStream(file).use { input ->
                 FileOutputStream(data).use { output ->
@@ -174,9 +193,14 @@ class PeerClient(private val context: Context) {
                         val count = input.read(buffer)
                         if (count < 0) break
                         size += count
-                        require(size <= MAX_FILE) { "File exceeds 100 MiB limit" }
+                        require(size <= MAX_FILE) { "File exceeds the 1 GB limit" }
                         hash.update(buffer, 0, count)
                         output.write(buffer, 0, count)
+                        val now = android.os.SystemClock.elapsedRealtime()
+                        if (now - lastEmit >= 200 || size == expectedSize) {
+                            emitProgress(TransferProgress(id, name, TransferProgress.Direction.SEND, size, expectedSize, TransferProgress.State.PREPARING))
+                            lastEmit = now
+                        }
                     }
                     output.fd.sync()
                 }
@@ -185,9 +209,11 @@ class PeerClient(private val context: Context) {
             val offer = json("type" to "file.offer", "id" to id, "name" to name, "size" to size,
                 "sha256" to hash.digest().joinToString("") { "%02x".format(it) })
             FileOutputStream(manifest).use { it.write(offer.toString().toByteArray()); it.fd.sync() }
+            emitProgress(TransferProgress(id, name, TransferProgress.Direction.SEND, 0L, size, TransferProgress.State.QUEUED))
             return manifest
         } catch (error: Exception) {
             data.delete()
+            emitProgress(TransferProgress(id, name, TransferProgress.Direction.SEND, size, expectedSize, TransferProgress.State.FAILED, error.message))
             throw error
         }
     }
@@ -210,13 +236,14 @@ class PeerClient(private val context: Context) {
                 var response = channel.receive()
                 if (response.getString("type") == "file.ready") {
                     val resumeOffset = response.optLong("size", 0L)
+                    require(resumeOffset in 0..size) { "Invalid resume offset" }
                     emitProgress(TransferProgress(id, name, TransferProgress.Direction.SEND, resumeOffset, size, TransferProgress.State.TRANSFERRING))
                     FileInputStream(file).use { input ->
-                        if (resumeOffset > 0 && resumeOffset < size) {
+                        if (resumeOffset > 0) {
                             var skipped = 0L
                             while (skipped < resumeOffset) {
                                 val count = input.skip(resumeOffset - skipped)
-                                if (count <= 0) break
+                                check(count > 0) { "Queued source is incomplete" }
                                 skipped += count
                             }
                         }
@@ -236,6 +263,7 @@ class PeerClient(private val context: Context) {
                         }
                     }
                     channel.output.flush()
+                    emitProgress(TransferProgress(id, name, TransferProgress.Direction.SEND, size, size, TransferProgress.State.VERIFYING))
                     response = channel.receive()
                 }
                 check(response.getString("type") == "file.saved" &&
@@ -247,7 +275,9 @@ class PeerClient(private val context: Context) {
             emitProgress(TransferProgress(id, name, TransferProgress.Direction.SEND, size, size, TransferProgress.State.COMPLETED))
             return "Sent $name"
         } catch (e: Exception) {
-            emitProgress(TransferProgress(id, name, TransferProgress.Direction.SEND, 0L, size, TransferProgress.State.FAILED, e.message))
+            emitProgress(TransferProgress(id, name, TransferProgress.Direction.SEND,
+                TransferProgressCenter.latest?.takeIf { it.id == id }?.transferredBytes ?: 0L,
+                size, TransferProgress.State.FAILED, e.message))
             throw e
         }
     }
@@ -543,118 +573,127 @@ class PeerClient(private val context: Context) {
             val id = offer.getString("id")
             require(UUID.fromString(id).toString() == id)
             val size = offer.getLong("size")
-            require(size in 0..MAX_FILE)
+            require(size in 0..MAX_FILE) { "File exceeds the 1 GB limit" }
             val name = offer.getString("name")
             require(name.isNotEmpty() && name.toByteArray().size <= 180 && !name.contains('/') &&
                 !name.contains('\\') && !name.contains('\u0000') && name != "." && name != "..")
             val expected = offer.getString("sha256")
             require(expected.matches(Regex("[0-9a-f]{64}")))
-            val receipts = context.getSharedPreferences("receipts-$pin", Context.MODE_PRIVATE)
-            val previous = receipts.getString(id, null)?.let { Uri.parse(it) }
-            // A saved item is still consumed and verified before acknowledging a retransmission.
-            val existing = previous?.takeIf { uri ->
-                val savedHash = runCatching {
-                    context.contentResolver.openInputStream(uri)?.use { input ->
-                        val hash = MessageDigest.getInstance("SHA-256")
+            var progress = TransferProgress(id, name, TransferProgress.Direction.RECEIVE, 0L, size, TransferProgress.State.PREPARING)
+            fun report(value: TransferProgress) { progress = value; emitProgress(value) }
+            report(progress)
+            try {
+                val receipts = context.getSharedPreferences("receipts-$pin", Context.MODE_PRIVATE)
+                val previous = receipts.getString(id, null)?.let { Uri.parse(it) }
+                // A saved item is still consumed and verified before acknowledging a retransmission.
+                val existing = previous?.takeIf { uri ->
+                    val savedHash = runCatching {
+                        context.contentResolver.openInputStream(uri)?.use { input ->
+                            val hash = MessageDigest.getInstance("SHA-256")
+                            val buffer = ByteArray(65536)
+                            while (true) {
+                                val count = input.read(buffer)
+                                if (count < 0) break
+                                hash.update(buffer, 0, count)
+                            }
+                            hash.digest().joinToString("") { "%02x".format(it) }
+                        }
+                    }.getOrNull()
+                    if (savedHash != null) check(savedHash == expected) { "Previously saved file was modified" }
+                    savedHash != null
+                }
+                if (existing != null) {
+                    channel.send(json("type" to "file.saved", "id" to id, "sha256" to expected))
+                    report(TransferProgress(id, name, TransferProgress.Direction.RECEIVE, size, size, TransferProgress.State.COMPLETED))
+                    return@use "Already saved $name in Downloads/Relay"
+                }
+
+                val incomingDir = File(context.filesDir, "incoming").apply { mkdirs() }
+                val partial = File(incomingDir, "$id.partial")
+                var existingSize = 0L
+                if (partial.exists()) {
+                    existingSize = partial.length()
+                    if (existingSize >= size) {
+                        existingSize = 0L
+                        partial.delete()
+                    }
+                }
+                channel.send(json("type" to "file.ready", "id" to id, "size" to existingSize))
+
+                report(TransferProgress(id, name, TransferProgress.Direction.RECEIVE, existingSize, size, TransferProgress.State.TRANSFERRING))
+
+                FileOutputStream(partial, true).use { file ->
+                    var remaining = size - existingSize
+                    var transferred = existingSize
+                    var lastEmit = System.currentTimeMillis()
+                    val buffer = ByteArray(65536)
+                    while (remaining > 0) {
+                        val count = channel.input.read(buffer, 0, minOf(buffer.size.toLong(), remaining).toInt())
+                        if (count < 0) throw EOFException("Transfer interrupted")
+                        file.write(buffer, 0, count)
+                        remaining -= count
+                        transferred += count
+                        val now = System.currentTimeMillis()
+                        if (now - lastEmit >= 200 || transferred == size) {
+                            report(TransferProgress(id, name, TransferProgress.Direction.RECEIVE, transferred, size, TransferProgress.State.TRANSFERRING))
+                            lastEmit = now
+                        }
+                    }
+                    file.flush()
+                    file.fd.sync()
+                }
+
+                report(TransferProgress(id, name, TransferProgress.Direction.RECEIVE, size, size, TransferProgress.State.VERIFYING))
+
+                val actualHash = MessageDigest.getInstance("SHA-256").let { md ->
+                    FileInputStream(partial).use { input ->
                         val buffer = ByteArray(65536)
                         while (true) {
                             val count = input.read(buffer)
                             if (count < 0) break
-                            hash.update(buffer, 0, count)
+                            md.update(buffer, 0, count)
                         }
-                        hash.digest().joinToString("") { "%02x".format(it) }
                     }
-                }.getOrNull()
-                if (savedHash != null) check(savedHash == expected) { "Previously saved file was modified" }
-                savedHash != null
-            }
-            if (existing != null) {
-                channel.send(json("type" to "file.saved", "id" to id, "sha256" to expected))
-                return@use "Already saved $name in Downloads/Companion"
-            }
-
-            val incomingDir = File(context.filesDir, "incoming").apply { mkdirs() }
-            val partial = File(incomingDir, "$id.partial")
-            var existingSize = 0L
-            if (partial.exists()) {
-                existingSize = partial.length()
-                if (existingSize >= size) {
-                    existingSize = 0L
+                    md.digest().joinToString("") { "%02x".format(it) }
+                }
+                check(actualHash == expected) {
                     partial.delete()
+                    report(TransferProgress(id, name, TransferProgress.Direction.RECEIVE, 0L, size, TransferProgress.State.FAILED, "Verification failed"))
+                    "File verification failed"
                 }
-            }
-            channel.send(json("type" to "file.ready", "id" to id, "size" to existingSize))
 
-            emitProgress(TransferProgress(id, name, TransferProgress.Direction.RECEIVE, existingSize, size, TransferProgress.State.TRANSFERRING))
-
-            FileOutputStream(partial, true).use { file ->
-                var remaining = size - existingSize
-                var transferred = existingSize
-                var lastEmit = System.currentTimeMillis()
-                val buffer = ByteArray(65536)
-                while (remaining > 0) {
-                    val count = channel.input.read(buffer, 0, minOf(buffer.size.toLong(), remaining).toInt())
-                    if (count < 0) throw EOFException("Transfer interrupted")
-                    file.write(buffer, 0, count)
-                    remaining -= count
-                    transferred += count
-                    val now = System.currentTimeMillis()
-                    if (now - lastEmit >= 200 || transferred == size) {
-                        emitProgress(TransferProgress(id, name, TransferProgress.Direction.RECEIVE, transferred, size, TransferProgress.State.TRANSFERRING))
-                        lastEmit = now
+                val values = ContentValues().apply {
+                    put(MediaStore.Downloads.DISPLAY_NAME, name)
+                    put(MediaStore.Downloads.MIME_TYPE, "application/octet-stream")
+                    put(MediaStore.Downloads.RELATIVE_PATH, "Download/Relay")
+                    put(MediaStore.Downloads.IS_PENDING, 1)
+                }
+                val destination = context.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+                    ?: error("Could not create a Downloads file")
+                var published = false
+                try {
+                    context.contentResolver.openOutputStream(destination, "w")?.use { out ->
+                        FileInputStream(partial).use { inp -> inp.copyTo(out, 65536) }
+                        out.flush()
+                    } ?: error("Could not write destination")
+                    check(context.contentResolver.update(destination, ContentValues().apply {
+                        put(MediaStore.Downloads.IS_PENDING, 0)
+                    }, null, null) == 1)
+                    published = true
+                    partial.delete()
+                    check(receipts.edit().putString(id, destination.toString()).commit())
+                    channel.send(json("type" to "file.saved", "id" to id, "sha256" to expected))
+                    report(TransferProgress(id, name, TransferProgress.Direction.RECEIVE, size, size, TransferProgress.State.COMPLETED))
+                    "Saved $name in Downloads/Relay"
+                } finally {
+                    if (!published) {
+                        context.contentResolver.delete(destination, null, null)
+                        report(TransferProgress(id, name, TransferProgress.Direction.RECEIVE, 0L, size, TransferProgress.State.FAILED, "Save failed"))
                     }
                 }
-                file.flush()
-                file.fd.sync()
-            }
-
-            emitProgress(TransferProgress(id, name, TransferProgress.Direction.RECEIVE, size, size, TransferProgress.State.VERIFYING))
-
-            val actualHash = MessageDigest.getInstance("SHA-256").let { md ->
-                FileInputStream(partial).use { input ->
-                    val buffer = ByteArray(65536)
-                    while (true) {
-                        val count = input.read(buffer)
-                        if (count < 0) break
-                        md.update(buffer, 0, count)
-                    }
-                }
-                md.digest().joinToString("") { "%02x".format(it) }
-            }
-            check(actualHash == expected) {
-                partial.delete()
-                emitProgress(TransferProgress(id, name, TransferProgress.Direction.RECEIVE, 0L, size, TransferProgress.State.FAILED, "Verification failed"))
-                "File verification failed"
-            }
-
-            val values = ContentValues().apply {
-                put(MediaStore.Downloads.DISPLAY_NAME, name)
-                put(MediaStore.Downloads.MIME_TYPE, "application/octet-stream")
-                put(MediaStore.Downloads.RELATIVE_PATH, "Download/Relay")
-                put(MediaStore.Downloads.IS_PENDING, 1)
-            }
-            val destination = context.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
-                ?: error("Could not create a Downloads file")
-            var published = false
-            try {
-                context.contentResolver.openOutputStream(destination, "w")?.use { out ->
-                    FileInputStream(partial).use { inp -> inp.copyTo(out, 65536) }
-                    out.flush()
-                } ?: error("Could not write destination")
-                check(context.contentResolver.update(destination, ContentValues().apply {
-                    put(MediaStore.Downloads.IS_PENDING, 0)
-                }, null, null) == 1)
-                published = true
-                partial.delete()
-                check(receipts.edit().putString(id, destination.toString()).commit())
-                channel.send(json("type" to "file.saved", "id" to id, "sha256" to expected))
-                emitProgress(TransferProgress(id, name, TransferProgress.Direction.RECEIVE, size, size, TransferProgress.State.COMPLETED))
-                "Saved $name in Downloads/Relay"
-            } finally {
-                if (!published) {
-                    context.contentResolver.delete(destination, null, null)
-                    emitProgress(TransferProgress(id, name, TransferProgress.Direction.RECEIVE, 0L, size, TransferProgress.State.FAILED, "Save failed"))
-                }
+            } catch (error: Exception) {
+                emitProgress(progress.copy(state = TransferProgress.State.FAILED, error = error.message))
+                throw error
             }
         }
     }
@@ -689,7 +728,7 @@ class PeerClient(private val context: Context) {
         val tls = SSLContext.getInstance("TLS").apply { init(managers, arrayOf(trust), SecureRandom()) }
         val socket = tls.socketFactory.createSocket() as SSLSocket
         try {
-            socket.soTimeout = 30000
+            socket.soTimeout = 120000
             socket.enabledProtocols = socket.supportedProtocols.filter { it == "TLSv1.2" || it == "TLSv1.3" }.toTypedArray()
             socket.connect(InetSocketAddress(targetHost, targetPort), timeoutMs)
             socket.startHandshake()

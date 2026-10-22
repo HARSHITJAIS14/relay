@@ -38,14 +38,25 @@ final class Channel: @unchecked Sendable {
                 default: break
                 }
             }
-            let timeout = DispatchWorkItem { [weak self] in self?.connection.cancel() }
-            deadline = timeout
-            queue.asyncAfter(deadline: .now() + 120, execute: timeout)
+            refreshDeadline()
             connection.start(queue: queue)
         }
     }
 
-    func close() { deadline?.cancel(); connection.cancel() }
+    // Timeout idle connections, not an active large transfer's total duration.
+    private func refreshDeadline() {
+        queue.async { [weak self] in
+            guard let self else { return }
+            self.deadline?.cancel()
+            let timeout = DispatchWorkItem { [weak self] in self?.connection.cancel() }
+            self.deadline = timeout
+            self.queue.asyncAfter(deadline: .now() + 120, execute: timeout)
+        }
+    }
+
+    func close() {
+        queue.async { [self] in deadline?.cancel(); connection.cancel() }
+    }
 
     func peerFingerprint() throws -> String {
         guard let metadata = connection.metadata(definition: NWProtocolTLS.definition) as? NWProtocolTLS.Metadata else {
@@ -66,7 +77,7 @@ final class Channel: @unchecked Sendable {
         return try await withCheckedThrowingContinuation { continuation in
             connection.receive(minimumIncompleteLength: count, maximumLength: count) { data, _, _, error in
                 if let error { continuation.resume(throwing: error) }
-                else if let data, data.count == count { continuation.resume(returning: data) }
+                else if let data, data.count == count { self.refreshDeadline(); continuation.resume(returning: data) }
                 else { continuation.resume(throwing: CompanionError.message("Incomplete network data.")) }
             }
         }
@@ -76,7 +87,7 @@ final class Channel: @unchecked Sendable {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             connection.send(content: bytes, completion: .contentProcessed { error in
                 if let error { continuation.resume(throwing: error) }
-                else { continuation.resume() }
+                else { self.refreshDeadline(); continuation.resume() }
             })
         }
     }

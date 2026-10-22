@@ -10,7 +10,9 @@ experimental branch. Do not merge production cleanup back into development blind
 
 Before a release:
 
-1. Run `swift test -c release --package-path apps/macos`.
+1. Run `swift test -c release --package-path apps/macos`. For file-transfer changes,
+   use `RUN_LARGE_TRANSFER_TESTS=1 swift test -c release --package-path apps/macos`
+   to stream a full 1 GB file through the production send/receive code and verify resumption.
 2. With JDK 17 and Android SDK 36 configured, run
    `./gradlew :core:test :app:assembleDebug :app:lintDebug` from `apps/android`.
 3. Verify the supported features on paired devices. Keep synthetic test data out of personal messages.

@@ -178,6 +178,7 @@ public final class CompanionServer: ObservableObject {
     @Published public private(set) var pending: PairingRequest?
     @Published public private(set) var peerName: String?
     @Published public private(set) var lastTransfer = ""
+    @Published public private(set) var transferProgress: TransferProgress?
     @Published public private(set) var fingerprint = ""
     @Published public private(set) var inbox: [InboxItem] = []
     @Published public private(set) var notifications: [MirroredNotification] = []
@@ -441,9 +442,16 @@ public final class CompanionServer: ObservableObject {
     public func enqueue(_ url: URL) async {
         guard trusted != nil, let store else { return }
         do {
-            let offer = try await store.enqueue(url)
-            lastTransfer = "Queued \(offer.name). Open Companion on your phone to receive."
-        } catch { lastTransfer = error.localizedDescription }
+            let offer = try await store.enqueue(url) { [weak self] progress in
+                await MainActor.run { self?.transferProgress = progress }
+            }
+            lastTransfer = "Queued \(offer.name). Waiting for your phone."
+        } catch {
+            lastTransfer = error.localizedDescription
+            transferProgress = TransferProgress(id: UUID().uuidString, name: url.lastPathComponent,
+                                                direction: .send, transferredBytes: 0, totalBytes: 0,
+                                                stage: .failed, error: error.localizedDescription)
+        }
     }
 
     public func refreshInbox() async {
@@ -570,7 +578,16 @@ public final class CompanionServer: ObservableObject {
                 // populated. The first authenticated read completes that flight.
                 let request = try await channel.receiveMessage()
                 let peer = try channel.peerFingerprint()
-                try await handle(request, peer: peer, channel: channel)
+                do {
+                    try await handle(request, peer: peer, channel: channel)
+                } catch {
+                    if !busy && ((request.type == "file.offer" && request.id == transferProgress?.id) ||
+                                 (request.type == "file.next" && transferProgress?.direction == .send)) {
+                        transferProgress = transferProgress?.changing(stage: .failed, error: error.localizedDescription)
+                        lastTransfer = "Transfer interrupted: \(error.localizedDescription)"
+                    }
+                    throw error
+                }
             } catch {
                 Logger(subsystem: "dev.companion", category: "connection").error("Connection failed: \(error.localizedDescription, privacy: .public)")
                 status = "Connection issue: \(error.localizedDescription)"
@@ -613,7 +630,9 @@ public final class CompanionServer: ObservableObject {
                   let hash = request.sha256 else { throw CompanionError.message("Invalid offer or transfer busy.") }
             busy = true
             defer { busy = false }
-            let saved = try await store.receive(FileOffer(id: id, name: name, size: size, sha256: hash), channel: channel)
+            let saved = try await store.receive(FileOffer(id: id, name: name, size: size, sha256: hash), channel: channel) { [weak self] progress in
+                await MainActor.run { self?.transferProgress = progress }
+            }
             if activeCaptureRequest != nil {
                 activeCaptureRequest = nil
                 pendingCaptureRequest = nil
@@ -628,19 +647,32 @@ public final class CompanionServer: ObservableObject {
             guard let offer = try await store.next() else {
                 try await channel.sendMessage(WireMessage(type: "file.empty")); return
             }
+            transferProgress = TransferProgress(id: offer.id, name: offer.name, direction: .send,
+                                                transferredBytes: 0, totalBytes: offer.size, stage: .preparing)
             try await channel.sendMessage(WireMessage(type: "file.offer", name: offer.name, id: offer.id,
                                                       size: offer.size, sha256: offer.sha256))
             let ready = try await channel.receiveMessage()
+            if ready.type == "file.saved", ready.id == offer.id, ready.sha256 == offer.sha256 {
+                try await store.acknowledge(id: offer.id, sha256: offer.sha256)
+                transferProgress = TransferProgress(id: offer.id, name: offer.name, direction: .send,
+                                                    transferredBytes: offer.size, totalBytes: offer.size, stage: .completed)
+                lastTransfer = "Sent \(offer.name)"
+                return
+            }
             guard ready.type == "file.ready", ready.id == offer.id else {
                 throw CompanionError.message("Receiver is not ready.")
             }
             let resumeOffset = ready.size ?? 0
-            try await store.send(offer, channel: channel, resumeOffset: resumeOffset)
+            try await store.send(offer, channel: channel, resumeOffset: resumeOffset) { [weak self] progress in
+                await MainActor.run { self?.transferProgress = progress }
+            }
+            transferProgress = transferProgress?.changing(stage: .verifying)
             let receipt = try await channel.receiveMessage()
             guard receipt.type == "file.saved", receipt.id == offer.id, receipt.sha256 == offer.sha256 else {
                 throw CompanionError.message("Invalid saved receipt.")
             }
             try await store.acknowledge(id: offer.id, sha256: offer.sha256)
+            transferProgress = transferProgress?.changing(stage: .completed)
             lastTransfer = "Sent \(offer.name)"
         case "inbox.item":
             guard let text = request.text, !text.isEmpty else { throw CompanionError.message("Invalid inbox item.") }
@@ -751,7 +783,7 @@ public final class CompanionServer: ObservableObject {
             lastTransfer = "SMS dispatched from phone"
             try await channel.sendMessage(WireMessage(type: "ok"))
         case "call.state":
-            let callState = (request.state ?? "IDLE").uppercased()
+            let callState = (request.state ?? "IDLE").trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
             let caller = (request.callerName?.isEmpty == false ? request.callerName : request.number) ?? "Unknown Caller"
             let number = request.number ?? ""
             let callId = request.callId ?? UUID().uuidString.lowercased()

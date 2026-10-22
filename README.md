@@ -8,7 +8,7 @@ Relay brings your Android into your Mac workflow. Send a file, grab a clipboard,
 reply to SMS, and see your phone’s notifications on your Mac.
 Your devices talk directly over local Wi-Fi.
 
-[Download v1.6.0](https://github.com/HARSHITJAIS14/relay/releases/tag/v1.6.0) · [Get started](#get-started) · [Build from source](#build-from-source)
+[Download v1.6.1](https://github.com/HARSHITJAIS14/relay/releases/tag/v1.6.1) · [Get started](#get-started) · [Build from source](#build-from-source)
 
 </div>
 
@@ -38,16 +38,16 @@ QR scanning uses Google Play services; you can also paste a pairing invitation l
 
 ## Downloads & current status
 
-[Download v1.6.0](https://github.com/HARSHITJAIS14/relay/releases/tag/v1.6.0), featuring file transfers, one-tap clipboard sync, SMS, and notification mirroring.
+[Download v1.6.1](https://github.com/HARSHITJAIS14/relay/releases/tag/v1.6.1), featuring file transfers, one-tap clipboard sync, SMS, and notification mirroring.
 
 | Platform | Package |
 | --- | --- |
-| macOS (Apple Silicon) | [Relay-v1.6.0.dmg](https://github.com/HARSHITJAIS14/relay/releases/download/v1.6.0/Relay-v1.6.0.dmg) |
-| Android | [Relay-v1.6.0.apk](https://github.com/HARSHITJAIS14/relay/releases/download/v1.6.0/Relay-v1.6.0.apk) |
+| macOS (Apple Silicon) | [Relay-v1.6.1.dmg](https://github.com/HARSHITJAIS14/relay/releases/download/v1.6.1/Relay-v1.6.1.dmg) |
+| Android | [Relay-v1.6.1.apk](https://github.com/HARSHITJAIS14/relay/releases/download/v1.6.1/Relay-v1.6.1.apk) |
 
-### Included in v1.6.0
+### Included in v1.6.1
 
-- **Files:** send in either direction, with transfer progress, reconnection, and integrity checks.
+- **Files:** send in either direction, with preparation feedback, live percentage and byte counts, reconnection, and integrity checks.
 - **Clipboard:** one **Sync** action handles sending and receiving. No direction picker.
 - **SMS:** browse conversations and compose messages on Mac through your paired phone.
 - **Notifications:** mirror phone notifications and reply where the originating app supports inline replies.
@@ -58,7 +58,7 @@ Notification mirroring requires Android notification access. Inline replies depe
 
 Relay is an early project. Current limits are part of the deal:
 
-- **100 MiB per file.** Transfers use checkpoints and verify the complete file with SHA-256 before saving it.
+- **1 GB per file (1,000,000,000 bytes).** Transfers use checkpoints and verify the complete file with SHA-256 before saving it.
 - **Local network required.** Guest Wi-Fi, client isolation, firewalls, and sleeping devices can prevent connections.
 - **Clipboard access depends on Android.** Use the app, share sheet, or Quick Settings tile when background clipboard access is restricted. Applying Mac clipboard updates automatically is an optional Android setting.
 - **Build targets:** macOS 13+ and Android 10+. Existing device testing covers an Apple Silicon Mac and an Android 16 phone; that does not establish compatibility with every supported OS or Intel Macs.

@@ -28,7 +28,7 @@ struct FileOffer: Codable, Sendable {
 }
 
 actor TransferStore {
-    static let maximumSize: Int64 = 100 * 1024 * 1024
+    static let maximumSize: Int64 = 1_000_000_000
     let root: URL
     let receiveFolder: URL
 
@@ -41,24 +41,54 @@ actor TransferStore {
         Self.cleanupOrphanedPartials(in: root)
     }
 
-    func enqueue(_ source: URL) throws -> FileOffer {
+    func enqueue(_ source: URL, onProgress: @escaping TransferProgressHandler = { _ in }) async throws -> FileOffer {
         let info = try source.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey, .isSymbolicLinkKey])
         guard info.isRegularFile == true, info.isSymbolicLink != true,
               let count = info.fileSize, count <= Self.maximumSize else {
-            throw CompanionError.message("Select a regular file up to 100 MiB for this development build.")
+            throw CompanionError.message("Select a regular file up to 1 GB.")
         }
         let id = UUID().uuidString.lowercased()
         let destination = root.appendingPathComponent("outbox/\(id).data")
-        try FileManager.default.copyItem(at: source, to: destination)
+        var size: Int64 = 0
+        await onProgress(TransferProgress(id: id, name: source.lastPathComponent, direction: .send,
+                                         transferredBytes: 0, totalBytes: Int64(count), stage: .preparing))
         do {
-            let actual = try destination.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
-            guard actual <= Self.maximumSize else { throw CompanionError.message("File exceeds 100 MiB.") }
-            let offer = FileOffer(id: id, name: source.lastPathComponent, size: Int64(actual),
-                                  sha256: try hashFile(destination))
+            let free = try FileManager.default.attributesOfFileSystem(forPath: root.path)[.systemFreeSize] as? NSNumber
+            guard let free, free.int64Value > Int64(count) + 32 * 1024 * 1024 else {
+                throw CompanionError.message("Not enough disk space to prepare this file.")
+            }
+            let input = try FileHandle(forReadingFrom: source)
+            defer { try? input.close() }
+            guard FileManager.default.createFile(atPath: destination.path, contents: nil) else {
+                throw CompanionError.message("Could not prepare file.")
+            }
+            let output = try FileHandle(forWritingTo: destination)
+            defer { try? output.close() }
+            var hash = SHA256()
+            var lastUpdate = Date.distantPast
+            while let chunk = try input.read(upToCount: 64 * 1024), !chunk.isEmpty {
+                size += Int64(chunk.count)
+                guard size <= Self.maximumSize else { throw CompanionError.message("File exceeds the 1 GB limit.") }
+                try output.write(contentsOf: chunk)
+                hash.update(data: chunk)
+                if Date().timeIntervalSince(lastUpdate) >= 0.2 || size == Int64(count) {
+                    await onProgress(TransferProgress(id: id, name: source.lastPathComponent, direction: .send,
+                                                     transferredBytes: size, totalBytes: Int64(count), stage: .preparing))
+                    lastUpdate = Date()
+                }
+            }
+            try output.synchronize()
+            let offer = FileOffer(id: id, name: source.lastPathComponent, size: size,
+                                  sha256: hash.finalize().map { String(format: "%02x", $0) }.joined())
             try JSONEncoder().encode(offer).write(to: root.appendingPathComponent("outbox/\(id).json"), options: .atomic)
+            await onProgress(TransferProgress(id: id, name: offer.name, direction: .send,
+                                             transferredBytes: 0, totalBytes: size, stage: .queued))
             return offer
         } catch {
             try? FileManager.default.removeItem(at: destination)
+            await onProgress(TransferProgress(id: id, name: source.lastPathComponent, direction: .send,
+                                             transferredBytes: size, totalBytes: Int64(count), stage: .failed,
+                                             error: error.localizedDescription))
             throw error
         }
     }
@@ -80,23 +110,36 @@ actor TransferStore {
         try? FileManager.default.removeItem(at: root.appendingPathComponent("outbox/\(id).data"))
     }
 
-    func send(_ offer: FileOffer, channel: Channel, resumeOffset: Int64 = 0) async throws {
+    func send(_ offer: FileOffer, channel: Channel, resumeOffset: Int64 = 0,
+              onProgress: @escaping TransferProgressHandler = { _ in }) async throws {
+        guard resumeOffset >= 0, resumeOffset <= offer.size else {
+            throw CompanionError.message("Invalid resume offset.")
+        }
         let file = try FileHandle(forReadingFrom: root.appendingPathComponent("outbox/\(offer.id).data"))
         defer { try? file.close() }
-        if resumeOffset > 0 && resumeOffset < offer.size {
+        if resumeOffset > 0 {
             try file.seek(toOffset: UInt64(resumeOffset))
         }
         var remaining = offer.size - resumeOffset
+        var lastUpdate = Date.distantPast
+        await onProgress(TransferProgress(id: offer.id, name: offer.name, direction: .send,
+                                         transferredBytes: resumeOffset, totalBytes: offer.size, stage: .transferring))
         while remaining > 0 {
             guard let chunk = try file.read(upToCount: Int(min(remaining, 64 * 1024))), !chunk.isEmpty else {
                 throw CompanionError.message("Queued source is incomplete.")
             }
             try await channel.send(chunk)
             remaining -= Int64(chunk.count)
+            if Date().timeIntervalSince(lastUpdate) >= 0.2 || remaining == 0 {
+                await onProgress(TransferProgress(id: offer.id, name: offer.name, direction: .send,
+                                                 transferredBytes: offer.size - remaining, totalBytes: offer.size, stage: .transferring))
+                lastUpdate = Date()
+            }
         }
     }
 
-    func receive(_ offer: FileOffer, channel: Channel) async throws -> URL {
+    func receive(_ offer: FileOffer, channel: Channel,
+                 onProgress: @escaping TransferProgressHandler = { _ in }) async throws -> URL {
         try validateID(offer.id)
         guard offer.size >= 0, offer.size <= Self.maximumSize,
               offer.sha256.count == 64, offer.sha256.allSatisfy({ $0.isHexDigit }),
@@ -106,9 +149,13 @@ actor TransferStore {
               offer.name != ".", offer.name != ".." else {
             throw CompanionError.message("Invalid file offer.")
         }
+        await onProgress(TransferProgress(id: offer.id, name: offer.name, direction: .receive,
+                                         transferredBytes: 0, totalBytes: offer.size, stage: .preparing))
         let destination = try destinationURL(for: offer.name, expectedHash: offer.sha256)
         if destination.alreadyComplete {
             try await channel.sendMessage(WireMessage(type: "file.saved", id: offer.id, sha256: offer.sha256))
+            await onProgress(TransferProgress(id: offer.id, name: offer.name, direction: .receive,
+                                             transferredBytes: offer.size, totalBytes: offer.size, stage: .completed))
             return destination.url
         }
         let final = destination.url
@@ -138,13 +185,23 @@ actor TransferStore {
         }
         try await channel.sendMessage(WireMessage(type: "file.ready", id: offer.id, size: existingSize))
         var remaining = offer.size - existingSize
+        var lastUpdate = Date.distantPast
+        await onProgress(TransferProgress(id: offer.id, name: offer.name, direction: .receive,
+                                         transferredBytes: existingSize, totalBytes: offer.size, stage: .transferring))
         while remaining > 0 {
             let data = try await channel.read(Int(min(remaining, 64 * 1024)))
             try file.write(contentsOf: data)
             remaining -= Int64(data.count)
+            if Date().timeIntervalSince(lastUpdate) >= 0.2 || remaining == 0 {
+                await onProgress(TransferProgress(id: offer.id, name: offer.name, direction: .receive,
+                                                 transferredBytes: offer.size - remaining, totalBytes: offer.size, stage: .transferring))
+                lastUpdate = Date()
+            }
         }
         try file.synchronize()
         try file.close()
+        await onProgress(TransferProgress(id: offer.id, name: offer.name, direction: .receive,
+                                         transferredBytes: offer.size, totalBytes: offer.size, stage: .verifying))
         let actual = try hashFile(partial)
         guard actual == offer.sha256 else {
             try? FileManager.default.removeItem(at: partial)
@@ -157,6 +214,8 @@ actor TransferStore {
         }
         try? FileManager.default.removeItem(at: partial)
         try await channel.sendMessage(WireMessage(type: "file.saved", id: offer.id, sha256: actual))
+        await onProgress(TransferProgress(id: offer.id, name: offer.name, direction: .receive,
+                                         transferredBytes: offer.size, totalBytes: offer.size, stage: .completed))
         return final
     }
 

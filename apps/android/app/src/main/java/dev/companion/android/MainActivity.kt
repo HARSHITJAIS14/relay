@@ -271,7 +271,7 @@ class MainActivity : Activity() {
                 setPadding(0, 0, 0, dp(2))
             })
             addView(TextView(this@MainActivity).apply {
-                text = "Photos, documents, and everything in between. Up to 100 MiB per file."
+                text = "Photos, documents, and everything in between. Up to 1 GB per file."
                 textSize = 13f
                 setTextColor(Color.parseColor("#586864"))
                 setPadding(0, 0, 0, dp(14))
@@ -816,9 +816,6 @@ class MainActivity : Activity() {
 
         coordinator = ConnectionCoordinator.getInstance(applicationContext)
         client = coordinator.client
-        client.onTransferProgress = { progress ->
-            handler.post { renderTransferProgress(progress) }
-        }
 
         work {
             if (client.paired) {
@@ -857,6 +854,7 @@ class MainActivity : Activity() {
         }
         updateCompanionFeatureButtons()
         coordinator.addListener(connectionListener)
+        TransferProgressCenter.addListener(transferListener)
         coordinator.triggerRefresh()
         handler.postDelayed(poll, 1000)
 
@@ -873,6 +871,7 @@ class MainActivity : Activity() {
         val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         clipboard.removePrimaryClipChangedListener(clipListener)
         coordinator.removeListener(connectionListener)
+        TransferProgressCenter.removeListener(transferListener)
         handler.removeCallbacks(poll)
         super.onPause()
     }
@@ -1071,6 +1070,10 @@ class MainActivity : Activity() {
         footerRow.visibility = if (ready) View.VISIBLE else View.GONE
     }
 
+    private val transferListener: (TransferProgress) -> Unit = { progress ->
+        handler.post { if (!isDestroyed && resumed) renderTransferProgress(progress) }
+    }
+
     private fun renderTransferProgress(p: TransferProgress) {
         hideTransferRunnable?.let { handler.removeCallbacks(it) }
         transferCard.visibility = View.VISIBLE
@@ -1087,6 +1090,12 @@ class MainActivity : Activity() {
                 transferProgressBar.isIndeterminate = true
                 transferSummary.text = p.formattedSummary
             }
+            TransferProgress.State.QUEUED -> {
+                transferTitle.text = "File queued"
+                transferStatus.text = "Waiting"
+                transferProgressBar.isIndeterminate = true
+                transferSummary.text = "Waiting for Mac to receive"
+            }
             TransferProgress.State.TRANSFERRING -> {
                 transferTitle.text = dirLabel
                 val pct = p.percent
@@ -1097,11 +1106,11 @@ class MainActivity : Activity() {
                 transferSummary.text = p.formattedSummary
             }
             TransferProgress.State.VERIFYING -> {
-                transferTitle.text = "Verifying integrity…"
-                transferStatus.text = "SHA-256"
+                transferTitle.text = "Verifying file…"
+                transferStatus.text = "Finishing"
                 transferStatus.setTextColor(Color.parseColor("#2563EB"))
                 transferProgressBar.isIndeterminate = true
-                transferSummary.text = "Checking cryptographic checksum before save"
+                transferSummary.text = if (isSend) "Waiting for Mac to confirm the file was saved" else "Checking file before saving"
             }
             TransferProgress.State.COMPLETED -> {
                 transferTitle.text = if (isSend) "File sent ✓" else "File received ✓"
@@ -1119,10 +1128,7 @@ class MainActivity : Activity() {
                 transferStatus.text = "Paused"
                 transferStatus.setTextColor(Color.parseColor("#DC2626"))
                 transferProgressBar.isIndeterminate = false
-                transferSummary.text = "${p.error ?: "Connection interrupted"} • Will resume automatically"
-                val r = Runnable { transferCard.visibility = View.GONE }
-                hideTransferRunnable = r
-                handler.postDelayed(r, 6000)
+                transferSummary.text = p.error ?: "Connection interrupted. Waiting to reconnect."
             }
         }
     }
