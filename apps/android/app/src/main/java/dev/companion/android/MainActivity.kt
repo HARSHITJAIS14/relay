@@ -650,7 +650,7 @@ class MainActivity : Activity() {
         // 7.5. SMS & CALLS COMPANION CARD
         companionFeaturesCard = createCard().apply {
             addView(TextView(this@MainActivity).apply {
-                text = "SMS, Calls & Notifications"
+                text = "Messages & Notifications"
                 textSize = 16f
                 setTypeface(null, Typeface.BOLD)
                 setTextColor(Color.parseColor("#172C29"))
@@ -696,19 +696,17 @@ class MainActivity : Activity() {
                     LinearLayout.LayoutParams.WRAP_CONTENT
                 )
                 setOnClickListener {
-                    val perms = mutableListOf(
-                        android.Manifest.permission.READ_SMS,
-                        android.Manifest.permission.SEND_SMS,
-                        android.Manifest.permission.RECEIVE_SMS,
-                        android.Manifest.permission.READ_CONTACTS,
-                        android.Manifest.permission.READ_PHONE_STATE,
-                        android.Manifest.permission.READ_CALL_LOG,
-                        android.Manifest.permission.CALL_PHONE
+                    requestPermissions(
+                        arrayOf(
+                            android.Manifest.permission.READ_SMS,
+                            android.Manifest.permission.SEND_SMS,
+                            android.Manifest.permission.RECEIVE_SMS,
+                            android.Manifest.permission.READ_CONTACTS,
+                            android.Manifest.permission.READ_PHONE_STATE,
+                            android.Manifest.permission.READ_CALL_LOG
+                        ),
+                        102
                     )
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                        perms.add(android.Manifest.permission.ANSWER_PHONE_CALLS)
-                    }
-                    requestPermissions(perms.toTypedArray(), 102)
                 }
             }
             addView(smsCallPermsBtn)
@@ -901,10 +899,8 @@ class MainActivity : Activity() {
 
         val hasSms = SmsManagerHelper.hasSmsPermissions(this)
         val hasPhone = checkSelfPermission(android.Manifest.permission.READ_PHONE_STATE) == PackageManager.PERMISSION_GRANTED
-        val hasCalls = RelayCallController.hasCallPermissions(this)
-        val allGranted = hasSms && hasPhone && hasCalls
-        smsCallPermsBtn.text = if (allGranted) "SMS, Calls & Audio: Active ✓" else "Grant SMS, Call & Audio Permissions"
-        smsCallPermsBtn.setTextColor(if (allGranted) Color.parseColor("#15803D") else Color.parseColor("#172C29"))
+        smsCallPermsBtn.text = if (hasSms && hasPhone) "SMS & Call Alerts: Granted ✓" else "Enable SMS & Phone Alerts"
+        smsCallPermsBtn.setTextColor(if (hasSms && hasPhone) Color.parseColor("#15803D") else Color.parseColor("#172C29"))
     }
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {

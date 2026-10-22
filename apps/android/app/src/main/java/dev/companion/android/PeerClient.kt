@@ -845,69 +845,6 @@ class PeerClient(private val context: Context) {
                     val ack = channel.receive()
                     Log.i(TAG, "Mac acknowledged messages receipt: ${ack.optString("type")}")
                 }
-                "call.answer" -> {
-                    val speaker = response.optBoolean("speaker", false)
-                    Log.i(TAG, "Received call.answer command from Mac (speaker=$speaker)")
-                    val callController = RelayCallController(context)
-                    val ok = callController.answerCall(useSpeakerphone = speaker)
-                    channel.send(json(
-                        "type" to "call.action_receipt",
-                        "action" to "answer",
-                        "status" to (if (ok) "ok" else "failed")
-                    ))
-                    channel.receive()
-                }
-                "call.speaker" -> {
-                    val on = if (response.has("on")) response.getBoolean("on")
-                             else if (response.has("speaker")) response.getBoolean("speaker")
-                             else response.optBoolean("canReply", true)
-                    Log.i(TAG, "Received call.speaker command from Mac (on=$on)")
-                    val callController = RelayCallController(context)
-                    callController.setSpeakerphone(on)
-                    channel.send(json(
-                        "type" to "call.action_receipt",
-                        "action" to "speaker",
-                        "status" to "ok"
-                    ))
-                    channel.receive()
-                }
-                "call.reject", "call.end" -> {
-                    Log.i(TAG, "Received $cmdType command from Mac")
-                    val callController = RelayCallController(context)
-                    val ok = callController.endCall()
-                    channel.send(json(
-                        "type" to "call.action_receipt",
-                        "action" to cmdType,
-                        "status" to (if (ok) "ok" else "failed")
-                    ))
-                    channel.receive()
-                }
-                "call.dial" -> {
-                    val number = response.optString("number")
-                    Log.i(TAG, "Received call.dial command for $number from Mac")
-                    val callController = RelayCallController(context)
-                    val ok = callController.dialNumber(number)
-                    channel.send(json(
-                        "type" to "call.action_receipt",
-                        "action" to "dial",
-                        "number" to number,
-                        "status" to (if (ok) "ok" else "failed")
-                    ))
-                    channel.receive()
-                }
-                "call.decline_with_sms" -> {
-                    val number = response.optString("number")
-                    val message = response.optString("message")
-                    Log.i(TAG, "Received call.decline_with_sms command for $number from Mac")
-                    val callController = RelayCallController(context)
-                    val ok = callController.declineWithSms(number, message)
-                    channel.send(json(
-                        "type" to "call.action_receipt",
-                        "action" to "decline_with_sms",
-                        "status" to (if (ok) "ok" else "failed")
-                    ))
-                    channel.receive()
-                }
                 else -> {}
             }
         }

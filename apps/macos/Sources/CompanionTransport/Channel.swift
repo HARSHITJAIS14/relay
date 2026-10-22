@@ -131,8 +131,6 @@ public struct WireMessage: Codable, Sendable {
     public var title: String?
     public var canReply: Bool?
     public var sendId: String?
-    public var on: Bool?
-    public var speaker: Bool?
 
     public init(
         version: Int = 1,
@@ -161,9 +159,7 @@ public struct WireMessage: Codable, Sendable {
         appName: String? = nil,
         title: String? = nil,
         canReply: Bool? = nil,
-        sendId: String? = nil,
-        on: Bool? = nil,
-        speaker: Bool? = nil
+        sendId: String? = nil
     ) {
         self.version = version
         self.type = type

@@ -1,5 +1,6 @@
 package dev.companion.android
 
+import android.annotation.SuppressLint
 import android.app.PendingIntent
 import android.content.Intent
 import android.os.Build
@@ -18,6 +19,8 @@ class CompanionTileService : TileService() {
         tile.updateTile()
     }
 
+    // The Intent overload is used only below Android 14, where PendingIntent is unavailable.
+    @SuppressLint("StartActivityAndCollapseDeprecated")
     override fun onClick() {
         super.onClick()
         val intent = Intent(this, SyncClipboardActivity::class.java).apply {

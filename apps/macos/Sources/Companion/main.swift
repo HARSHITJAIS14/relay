@@ -1,5 +1,4 @@
 import SwiftUI
-import Combine
 import CompanionCore
 import CompanionTransport
 import AppKit
@@ -96,7 +95,6 @@ func generateQRCode(from string: String) -> NSImage? {
 enum RelayTab: String, CaseIterable {
     case transfer = "Transfer"
     case messages = "Messages"
-    case calls = "Calls"
     case notifications = "Notifications"
 }
 
@@ -112,15 +110,8 @@ private func formatTimestamp(_ ms: Int64) -> String {
     return formatter.string(from: date)
 }
 
-private func formatDuration(_ totalSeconds: Int) -> String {
-    let minutes = totalSeconds / 60
-    let seconds = totalSeconds % 60
-    return String(format: "%02d:%02d", minutes, seconds)
-}
-
 struct CompanionView: View {
     @ObservedObject var server: CompanionServer
-    @ObservedObject private var bluetooth = BluetoothHandsFreeController.shared
     @Environment(\.colorScheme) private var colorScheme
     @State private var selectedTab: RelayTab = .transfer
     @State private var host = ""
@@ -131,9 +122,6 @@ struct CompanionView: View {
     @State private var showNewSmsModal = false
     @State private var newSmsNumber = ""
     @State private var newSmsText = ""
-    @State private var dialerNumber = ""
-    @State private var callDurationSeconds = 0
-    @State private var isSpeakerOn = false
 
     private let relayGreen = Color(red: 0.14, green: 0.36, blue: 0.31)
 
@@ -173,9 +161,40 @@ struct CompanionView: View {
                     }
                 }
 
-                // Live Call Banner (Floating whenever a call is active)
-                if let call = server.activeCall {
-                    callStatusBanner(call: call)
+                // Live Incoming Call Banner
+                if let call = server.activeCall, call.state == "RINGING" {
+                    HStack(spacing: 12) {
+                        Image(systemName: "phone.fill")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .frame(width: 36, height: 36)
+                            .background(Color.green, in: Circle())
+                        VStack(alignment: .leading, spacing: 2) {
+                            HStack {
+                                Text("INCOMING PHONE CALL")
+                                    .font(.system(size: 9, weight: .bold))
+                                    .tracking(0.8)
+                                    .foregroundStyle(.green)
+                                Spacer()
+                            }
+                            Text(call.callerName)
+                                .font(.headline)
+                            if !call.number.isEmpty && call.number != call.callerName {
+                                Text(call.number)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        Spacer()
+                        Button("Dismiss") {
+                            server.dismissCall()
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                    }
+                    .padding(12)
+                    .background(RoundedRectangle(cornerRadius: 12).fill(Color.green.opacity(0.12)))
+                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.green.opacity(0.35), lineWidth: 1))
                 }
 
                 if let request = server.pending {
@@ -236,9 +255,6 @@ struct CompanionView: View {
                                 if tab == .messages && server.smsThreads.isEmpty {
                                     server.requestSmsSync()
                                 }
-                                if tab == .calls {
-                                    bluetooth.refreshDevices(peerNameHint: server.peerName)
-                                }
                             } label: {
                                 HStack(spacing: 5) {
                                     switch tab {
@@ -246,8 +262,6 @@ struct CompanionView: View {
                                         Image(systemName: "arrow.triangle.swap")
                                     case .messages:
                                         Image(systemName: "message.fill")
-                                    case .calls:
-                                        Image(systemName: "phone.fill")
                                     case .notifications:
                                         Image(systemName: "bell.fill")
                                     }
@@ -280,8 +294,6 @@ struct CompanionView: View {
                         transferTabView
                     case .messages:
                         messagesTabView
-                    case .calls:
-                        callsTabView
                     case .notifications:
                         notificationsTabView
                     }
@@ -301,13 +313,6 @@ struct CompanionView: View {
         }
         .background(Color(nsColor: .windowBackgroundColor))
         .tint(colorScheme == .dark ? Color(red: 0.55, green: 0.80, blue: 0.69) : relayGreen)
-        .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { _ in
-            if server.activeCall?.state == "OFFHOOK" {
-                callDurationSeconds += 1
-            } else {
-                callDurationSeconds = 0
-            }
-        }
         .task { await server.start() }
     }
 
@@ -854,458 +859,5 @@ struct CompanionView: View {
         guard !text.isEmpty else { return }
         server.replyToNotification(id: notif.id, text: text)
         replyTexts[notif.id] = ""
-    }
-
-    // MARK: - Call Status Banner
-    @ViewBuilder
-    private func callStatusBanner(call: ActiveCall) -> some View {
-        if call.state == "DIALING" {
-            HStack(spacing: 12) {
-                Image(systemName: "phone.arrow.up.right.fill")
-                    .font(.system(size: 16, weight: .bold))
-                    .foregroundStyle(.white)
-                    .frame(width: 36, height: 36)
-                    .background(Color.blue, in: Circle())
-
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: 6) {
-                        Text("DIALING OUTGOING CALL…")
-                            .font(.system(size: 9, weight: .bold))
-                            .tracking(0.8)
-                            .foregroundStyle(.blue)
-                        Text("•")
-                            .foregroundStyle(.secondary)
-                        Text("Calling phone network…")
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(.secondary)
-                    }
-                    Text(call.callerName)
-                        .font(.headline)
-                    if !call.number.isEmpty && call.number != call.callerName {
-                        Text(call.number)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-
-                Spacer()
-
-                // Cancel Outgoing Call Button
-                Button {
-                    server.endCall()
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "phone.down.fill")
-                        Text("Cancel")
-                    }
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(Capsule().fill(Color.red))
-                }
-                .buttonStyle(.plain)
-
-                Button {
-                    server.dismissCall()
-                } label: {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundStyle(.secondary)
-                        .padding(4)
-                }
-                .buttonStyle(.plain)
-            }
-            .padding(12)
-            .background(RoundedRectangle(cornerRadius: 12).fill(Color.blue.opacity(0.08)))
-            .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.blue.opacity(0.25), lineWidth: 1))
-        } else if call.state == "RINGING" {
-            HStack(spacing: 12) {
-                Image(systemName: "phone.fill")
-                    .font(.system(size: 16, weight: .bold))
-                    .foregroundStyle(.white)
-                    .frame(width: 36, height: 36)
-                    .background(Color.green, in: Circle())
-
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: 6) {
-                        Text(bluetooth.isBluetoothPaired ? "INCOMING CALL (MAC AUDIO READY)" : "INCOMING CALL (WI-FI)")
-                            .font(.system(size: 9, weight: .bold))
-                            .tracking(0.8)
-                            .foregroundStyle(.green)
-                    }
-                    Text(call.callerName)
-                        .font(.headline)
-                    if !call.number.isEmpty && call.number != call.callerName {
-                        Text(call.number)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-
-                Spacer()
-
-                // Quick Decline Menu with Presets
-                Menu {
-                    Button("“Can't talk right now, I'll call you back.”") {
-                        server.declineCallWithSms(number: call.number, message: "Can't talk right now, I'll call you back.")
-                    }
-                    Button("“In a meeting, what's up?”") {
-                        server.declineCallWithSms(number: call.number, message: "In a meeting, what's up?")
-                    }
-                    Button("“Driving right now, talk later.”") {
-                        server.declineCallWithSms(number: call.number, message: "Driving right now, talk later.")
-                    }
-                } label: {
-                    Image(systemName: "message.fill")
-                        .font(.system(size: 11))
-                        .foregroundStyle(Color.primary)
-                        .frame(width: 28, height: 28)
-                        .background(Circle().fill(Color.secondary.opacity(0.12)))
-                }
-                .menuStyle(.borderlessButton)
-
-                // Decline Button
-                Button {
-                    server.rejectCall()
-                } label: {
-                    Image(systemName: "phone.down.fill")
-                        .font(.system(size: 12, weight: .bold))
-                        .foregroundStyle(.white)
-                        .frame(width: 30, height: 30)
-                        .background(Circle().fill(Color.red))
-                }
-                .buttonStyle(.plain)
-
-                if bluetooth.isBluetoothPaired {
-                    // Answer on Phone
-                    Button {
-                        isSpeakerOn = false
-                        server.answerCall(speaker: false, routeToMacAudio: false)
-                    } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "iphone")
-                            Text("Phone")
-                        }
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(Color.primary)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 6)
-                        .background(Capsule().strokeBorder(Color.secondary.opacity(0.3), lineWidth: 1))
-                    }
-                    .buttonStyle(.plain)
-
-                    // Answer on Mac Button (Direct Hands-Free Audio)
-                    Button {
-                        isSpeakerOn = false
-                        server.answerCall(speaker: false, routeToMacAudio: true)
-                    } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "macbook.and.iphone")
-                            Text("Answer on Mac")
-                        }
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
-                        .background(Capsule().fill(Color.green))
-                    }
-                    .buttonStyle(.plain)
-                } else {
-                    // Answer on Speakerphone Button
-                    Button {
-                        isSpeakerOn = true
-                        server.answerCall(speaker: true, routeToMacAudio: false)
-                    } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "speaker.wave.2.fill")
-                            Text("Speaker")
-                        }
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(Color.green)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 6)
-                        .background(Capsule().strokeBorder(Color.green, lineWidth: 1))
-                    }
-                    .buttonStyle(.plain)
-
-                    // Answer Button
-                    Button {
-                        isSpeakerOn = false
-                        server.answerCall(speaker: false, routeToMacAudio: false)
-                    } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "phone.fill")
-                            Text("Answer")
-                        }
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
-                        .background(Capsule().fill(Color.green))
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            .padding(12)
-            .background(RoundedRectangle(cornerRadius: 12).fill(Color.green.opacity(0.12)))
-            .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.green.opacity(0.35), lineWidth: 1))
-        } else if call.state == "OFFHOOK" {
-            HStack(spacing: 12) {
-                Image(systemName: "phone.fill")
-                    .font(.system(size: 16, weight: .bold))
-                    .foregroundStyle(.white)
-                    .frame(width: 36, height: 36)
-                    .background(Color.green, in: Circle())
-
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: 6) {
-                        Text(isSpeakerOn ? "SPEAKERPHONE LIVE" : "CALL IN PROGRESS")
-                            .font(.system(size: 9, weight: .bold))
-                            .tracking(0.8)
-                            .foregroundStyle(.green)
-                        Text("•")
-                            .foregroundStyle(.secondary)
-                        Text(formatDuration(callDurationSeconds))
-                            .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                            .foregroundStyle(.secondary)
-                    }
-                    Text(call.callerName)
-                        .font(.headline)
-                    if !call.number.isEmpty && call.number != call.callerName {
-                        Text(call.number)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-
-                Spacer()
-
-                // Toggle Speakerphone on Phone over Wi-Fi
-                Button {
-                    isSpeakerOn.toggle()
-                    server.setSpeakerphone(on: isSpeakerOn)
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: isSpeakerOn ? "speaker.wave.3.fill" : "speaker.wave.1")
-                        Text(isSpeakerOn ? "Speaker On" : "Speaker Off")
-                            .font(.caption2.weight(.medium))
-                    }
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(isSpeakerOn ? Color.green : Color.primary)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 5)
-                    .background(Capsule().fill(Color.secondary.opacity(0.12)))
-                }
-                .buttonStyle(.plain)
-
-                // End Button
-                Button {
-                    server.endCall()
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "phone.down.fill")
-                        Text("End")
-                    }
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(Capsule().fill(Color.red))
-                }
-                .buttonStyle(.plain)
-
-                Button {
-                    server.dismissCall()
-                } label: {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundStyle(.secondary)
-                        .padding(4)
-                }
-                .buttonStyle(.plain)
-            }
-            .padding(12)
-            .background(RoundedRectangle(cornerRadius: 12).fill(Color.green.opacity(0.08)))
-            .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.green.opacity(0.25), lineWidth: 1))
-        }
-    }
-
-    // MARK: - Calls Tab View
-    private var callsTabView: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            // 1. Audio & Call Companion Status Card
-            HStack(spacing: 12) {
-                Image(systemName: isSpeakerOn ? "speaker.wave.3.fill" : "phone.arrow.up.right.fill")
-                    .font(.system(size: 18))
-                    .foregroundStyle(relayGreen)
-                    .frame(width: 36, height: 36)
-                    .background(RoundedRectangle(cornerRadius: 8).fill(relayGreen.opacity(0.12)))
-
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: 4) {
-                        Text(isSpeakerOn ? "Phone Speakerphone Active" : "Cellular Call Companion")
-                            .font(.subheadline.weight(.semibold))
-                        Image(systemName: "checkmark.circle.fill")
-                            .font(.caption2)
-                            .foregroundStyle(.green)
-                    }
-                    Text(isSpeakerOn ? "Audio hands-free on phone speaker" : "Dial & control calls from Mac · Talk via phone / headset")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-                Spacer()
-
-                Button {
-                    isSpeakerOn.toggle()
-                    server.setSpeakerphone(on: isSpeakerOn)
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: isSpeakerOn ? "speaker.slash.fill" : "speaker.wave.2.fill")
-                        Text(isSpeakerOn ? "Earpiece" : "Speaker")
-                    }
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-            }
-            .padding(12)
-            .background(RoundedRectangle(cornerRadius: 10).fill(Color.secondary.opacity(0.06)))
-
-            // 2. Dialer Card
-            VStack(spacing: 14) {
-                HStack {
-                    TextField("Enter phone number…", text: $dialerNumber)
-                        .textFieldStyle(.plain)
-                        .font(.system(size: 20, weight: .semibold, design: .monospaced))
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 8)
-                        .background(RoundedRectangle(cornerRadius: 8).fill(Color.secondary.opacity(0.08)))
-
-                    if !dialerNumber.isEmpty {
-                        Button {
-                            if !dialerNumber.isEmpty {
-                                dialerNumber.removeLast()
-                            }
-                        } label: {
-                            Image(systemName: "delete.left.fill")
-                                .font(.system(size: 16))
-                                .foregroundStyle(.secondary)
-                        }
-                        .buttonStyle(.plain)
-                        .padding(.trailing, 4)
-                    }
-                }
-
-                // Dial Keypad Grid (3 columns: 1-9, *, 0, #)
-                let keypad: [[(String, String)]] = [
-                    [("1", ""), ("2", "ABC"), ("3", "DEF")],
-                    [("4", "GHI"), ("5", "JKL"), ("6", "MNO")],
-                    [("7", "PQRS"), ("8", "TUV"), ("9", "WXYZ")],
-                    [("*", ""), ("0", "+"), ("#", "")]
-                ]
-
-                VStack(spacing: 8) {
-                    ForEach(0..<keypad.count, id: \.self) { row in
-                        HStack(spacing: 12) {
-                            ForEach(0..<keypad[row].count, id: \.self) { col in
-                                let item = keypad[row][col]
-                                Button {
-                                    dialerNumber.append(item.0)
-                                } label: {
-                                    VStack(spacing: 1) {
-                                        Text(item.0)
-                                            .font(.system(size: 17, weight: .semibold))
-                                            .foregroundStyle(Color.primary)
-                                        if !item.1.isEmpty {
-                                            Text(item.1)
-                                                .font(.system(size: 8, weight: .bold))
-                                                .foregroundStyle(.secondary)
-                                        }
-                                    }
-                                    .frame(maxWidth: .infinity)
-                                    .frame(height: 38)
-                                    .background(RoundedRectangle(cornerRadius: 8).fill(Color.secondary.opacity(0.08)))
-                                }
-                                .buttonStyle(.plain)
-                            }
-                        }
-                    }
-                }
-
-                // Call Button
-                Button {
-                    let number = dialerNumber.trimmingCharacters(in: .whitespacesAndNewlines)
-                    guard !number.isEmpty else { return }
-                    server.dialNumber(number, routeToMacAudio: bluetooth.isBluetoothPaired)
-                } label: {
-                    HStack(spacing: 8) {
-                        Image(systemName: "phone.fill")
-                            .font(.system(size: 15, weight: .bold))
-                        Text(bluetooth.isBluetoothPaired ? "Call from Mac" : "Call on Phone")
-                            .font(.headline)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 10)
-                    .background(RoundedRectangle(cornerRadius: 10).fill(dialerNumber.isEmpty ? Color.secondary.opacity(0.2) : Color.green))
-                    .foregroundStyle(.white)
-                }
-                .buttonStyle(.plain)
-                .disabled(dialerNumber.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            }
-            .padding(14)
-            .background(RoundedRectangle(cornerRadius: 12).fill(Color.secondary.opacity(0.05)))
-
-            // 3. Quick Call from Synced Contacts
-            if !server.smsThreads.isEmpty {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("RECENT CONTACTS")
-                        .font(.system(size: 10, weight: .bold))
-                        .tracking(1.0)
-                        .foregroundStyle(.secondary)
-
-                    VStack(spacing: 6) {
-                        ForEach(server.smsThreads.prefix(8)) { thread in
-                            HStack(spacing: 10) {
-                                Circle()
-                                    .fill(relayGreen.opacity(0.18))
-                                    .frame(width: 30, height: 30)
-                                    .overlay(
-                                        Text(String((thread.contactName.isEmpty ? thread.address : thread.contactName).prefix(1)).uppercased())
-                                            .font(.system(size: 12, weight: .bold))
-                                            .foregroundStyle(relayGreen)
-                                    )
-
-                                VStack(alignment: .leading, spacing: 1) {
-                                    Text(thread.contactName.isEmpty ? thread.address : thread.contactName)
-                                        .font(.subheadline.weight(.medium))
-                                    if !thread.address.isEmpty && thread.address != thread.contactName {
-                                        Text(thread.address)
-                                            .font(.caption2)
-                                            .foregroundStyle(.secondary)
-                                    }
-                                }
-
-                                Spacer()
-
-                                Button {
-                                    dialerNumber = thread.address
-                                    server.dialNumber(thread.address, routeToMacAudio: bluetooth.isBluetoothPaired)
-                                } label: {
-                                    Image(systemName: "phone.fill")
-                                        .font(.system(size: 11))
-                                        .foregroundStyle(.white)
-                                        .frame(width: 28, height: 28)
-                                        .background(Circle().fill(Color.green))
-                                }
-                                .buttonStyle(.plain)
-                            }
-                            .padding(8)
-                            .background(RoundedRectangle(cornerRadius: 8).fill(Color.secondary.opacity(0.04)))
-                        }
-                    }
-                }
-            }
-        }
     }
 }

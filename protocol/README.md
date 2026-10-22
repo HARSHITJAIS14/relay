@@ -1,6 +1,6 @@
-# Control protocol v1 — initial implementation
+# Shared control-codec fixtures
 
-Only `session.hello` exists in this first slice. No capability is advertised until it is implemented. Parsers do not establish trust: a future authenticated transport must validate the peer before calling them.
+This document covers the original shared `session.hello` codec and its fixtures, not the complete production transport. Production pairing, mutual TLS, transfers, clipboard, SMS, and notifications are implemented in the platform transport code. Parsers alone do not establish trust.
 
 ## Framing
 
@@ -14,7 +14,7 @@ See [the shared fixture](fixtures/hello.json).
 
 - `protocolMajor`: integer 1; other versions rejected.
 - `protocolMinor`: nonnegative integer.
-- `type`: `session.hello`; other operations not implemented.
+- `type`: `session.hello`; other operations are outside this fixture codec.
 - `messageId`: canonical UUID string, case-insensitive.
 - `sessionId`: nonempty string, maximum 128 UTF-8 bytes.
 - `body.deviceName`: nonempty string, maximum 128 UTF-8 bytes.
@@ -24,4 +24,4 @@ Unknown fields may be ignored. Missing or incorrectly typed required fields are 
 
 Swift and Kotlin tests consume the same fixtures and exercise every split position, coalesced frames, bytewise delivery, invalid lengths, unsupported versions, and malformed payload recovery.
 
-This is not yet the complete transfer protocol. File streaming, receipts, capability negotiation outcomes, pairing, and authenticated sessions remain to be implemented.
+For the production wire format and handlers, see `Channel.swift` and `CompanionServer.swift` in `apps/macos/Sources/CompanionTransport`, and `PeerClient.kt` in `apps/android/app/src/main/java/dev/companion/android`.

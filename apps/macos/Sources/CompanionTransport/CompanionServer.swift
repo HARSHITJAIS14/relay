@@ -247,7 +247,6 @@ public final class CompanionServer: ObservableObject {
             if FileManager.default.fileExists(atPath: peerFile.path) {
                 trusted = try JSONDecoder().decode(TrustedPeer.self, from: Data(contentsOf: peerFile))
                 peerName = trusted?.name
-                BluetoothHandsFreeController.shared.refreshDevices(peerNameHint: trusted?.name)
             }
             if let trusted {
                 let peerStore = try TransferStore(root: root.appendingPathComponent(trusted.fingerprint), receiveFolder: receiveFolder)
@@ -403,7 +402,6 @@ public final class CompanionServer: ObservableObject {
                 self.inbox = (try? await peerStore.getInboxItems()) ?? []
             }
             peerName = peer.name
-            BluetoothHandsFreeController.shared.refreshDevices(peerNameHint: peer.name)
             invitationToken = nil
             invitation = ""
             self.pending = nil
@@ -548,49 +546,6 @@ public final class CompanionServer: ObservableObject {
                 isFromMe: true
             )
             activeThreadMessages.append(optimisticMsg)
-        }
-    }
-
-    public func answerCall(speaker: Bool = false, routeToMacAudio: Bool = false) {
-        queueCommand(WireMessage(type: "call.answer", canReply: speaker))
-        if let current = activeCall {
-            activeCall = ActiveCall(callId: current.callId, number: current.number, callerName: current.callerName, state: "OFFHOOK", timestamp: current.timestamp)
-        }
-        if routeToMacAudio {
-            BluetoothHandsFreeController.shared.acceptCall()
-        }
-    }
-
-    public func setSpeakerphone(on: Bool) {
-        queueCommand(WireMessage(type: "call.speaker", canReply: on, on: on, speaker: on))
-    }
-
-    public func rejectCall() {
-        queueCommand(WireMessage(type: "call.reject"))
-        activeCall = nil
-        BluetoothHandsFreeController.shared.endCall()
-    }
-
-    public func endCall() {
-        queueCommand(WireMessage(type: "call.end"))
-        activeCall = nil
-        BluetoothHandsFreeController.shared.endCall()
-    }
-
-    public func declineCallWithSms(number: String, message: String) {
-        let trimmedMsg = message.trimmingCharacters(in: .whitespacesAndNewlines)
-        queueCommand(WireMessage(type: "call.decline_with_sms", message: trimmedMsg, number: number))
-        activeCall = nil
-        BluetoothHandsFreeController.shared.endCall()
-    }
-
-    public func dialNumber(_ number: String, routeToMacAudio: Bool = false) {
-        let trimmed = number.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-        queueCommand(WireMessage(type: "call.dial", number: trimmed))
-        activeCall = ActiveCall(callId: UUID().uuidString.lowercased(), number: trimmed, callerName: trimmed, state: "DIALING", timestamp: Int64(Date().timeIntervalSince1970 * 1000))
-        if routeToMacAudio && BluetoothHandsFreeController.shared.isBluetoothPaired {
-            BluetoothHandsFreeController.shared.routeAudioToMac()
         }
     }
 
@@ -796,34 +751,19 @@ public final class CompanionServer: ObservableObject {
             lastTransfer = "SMS dispatched from phone"
             try await channel.sendMessage(WireMessage(type: "ok"))
         case "call.state":
-            let callState = (request.state ?? "IDLE").trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+            let callState = (request.state ?? "IDLE").uppercased()
             let caller = (request.callerName?.isEmpty == false ? request.callerName : request.number) ?? "Unknown Caller"
             let number = request.number ?? ""
             let callId = request.callId ?? UUID().uuidString.lowercased()
             let timestamp = request.timestamp ?? Int64(Date().timeIntervalSince1970 * 1000)
             if callState == "RINGING" {
                 activeCall = ActiveCall(callId: callId, number: number, callerName: caller, state: "RINGING", timestamp: timestamp)
-                BluetoothHandsFreeController.shared.refreshDevices(hint: caller)
                 postMacNotification(title: "Incoming Call", body: "\(caller) (\(number))")
-            } else if callState == "OFFHOOK" {
-                if let existing = activeCall {
-                    activeCall = ActiveCall(
-                        callId: existing.callId,
-                        number: (existing.number.isEmpty || existing.number == "Unknown") ? number : existing.number,
-                        callerName: (existing.callerName.isEmpty || existing.callerName == "Unknown") ? caller : existing.callerName,
-                        state: "OFFHOOK",
-                        timestamp: timestamp
-                    )
-                } else {
-                    activeCall = ActiveCall(callId: callId, number: number, callerName: caller, state: "OFFHOOK", timestamp: timestamp)
-                }
             } else if callState == "MISSED" {
                 activeCall = nil
-                BluetoothHandsFreeController.shared.routeAudioToPhone()
                 postMacNotification(title: "Missed Call", body: "\(caller) (\(number))")
-            } else if callState == "IDLE" {
+            } else if callState == "IDLE" || callState == "OFFHOOK" {
                 activeCall = nil
-                BluetoothHandsFreeController.shared.routeAudioToPhone()
             }
             try await channel.sendMessage(WireMessage(type: "call.receipt"))
         case "command.poll":
@@ -865,12 +805,6 @@ public final class CompanionServer: ObservableObject {
                     let receipt = try await channel.receiveMessage()
                     if receipt.type == "notification.reply_ack" {
                         lastTransfer = "Reply delivered to phone"
-                    }
-                    try await channel.sendMessage(WireMessage(type: "ok"))
-                } else if cmd.type == "call.answer" || cmd.type == "call.reject" || cmd.type == "call.end" || cmd.type == "call.dial" || cmd.type == "call.decline_with_sms" {
-                    let receipt = try await channel.receiveMessage()
-                    if receipt.type == "call.action_receipt" {
-                        lastTransfer = "Call action executed on phone"
                     }
                     try await channel.sendMessage(WireMessage(type: "ok"))
                 }

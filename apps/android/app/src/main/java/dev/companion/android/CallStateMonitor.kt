@@ -82,7 +82,7 @@ class CallStateMonitor(private val context: Context) {
                 lastCallerName = callerName
                 Log.i(TAG, "Incoming call ringing: $number ($callerName)")
                 ConnectionCoordinator.getInstance(context).onCallStateChanged(
-                    state = "RINGING",
+                    state = "ringing",
                     number = number,
                     callerName = callerName
                 )
@@ -90,7 +90,7 @@ class CallStateMonitor(private val context: Context) {
             TelephonyManager.CALL_STATE_OFFHOOK -> {
                 Log.i(TAG, "Call off-hook (active)")
                 ConnectionCoordinator.getInstance(context).onCallStateChanged(
-                    state = "OFFHOOK",
+                    state = "offhook",
                     number = lastIncomingNumber ?: number,
                     callerName = lastCallerName ?: callerName
                 )
@@ -99,14 +99,14 @@ class CallStateMonitor(private val context: Context) {
                 if (lastState == TelephonyManager.CALL_STATE_RINGING) {
                     Log.i(TAG, "Call missed from ${lastIncomingNumber ?: number}")
                     ConnectionCoordinator.getInstance(context).onCallStateChanged(
-                        state = "MISSED",
+                        state = "missed",
                         number = lastIncomingNumber ?: number,
                         callerName = lastCallerName ?: callerName
                     )
                 } else {
                     Log.i(TAG, "Call idle / ended")
                     ConnectionCoordinator.getInstance(context).onCallStateChanged(
-                        state = "IDLE",
+                        state = "idle",
                         number = lastIncomingNumber ?: number,
                         callerName = lastCallerName ?: callerName
                     )

@@ -5,10 +5,10 @@
 **You bought a Mac. You didn't sign up to buy an iPhone.**
 
 Relay brings your Android into your Mac workflow. Send a file, grab a clipboard,
-share a link, or turn your phone into your Mac's camera and document scanner.
+reply to SMS, and see your phone’s notifications on your Mac.
 Your devices talk directly over local Wi-Fi.
 
-[Download v1.4.0](https://github.com/HARSHITJAIS14/relay/releases/tag/v1.4.0) · [Get started](#get-started) · [Build from source](#build-from-source)
+[Download v1.6.0](https://github.com/HARSHITJAIS14/relay/releases/tag/v1.6.0) · [Get started](#get-started) · [Build from source](#build-from-source)
 
 </div>
 
@@ -20,10 +20,9 @@ between macOS and Android, with no account and no cloud relay for your transfers
 | When you need to… | Use Relay to… |
 | --- | --- |
 | Get a photo or document onto the other device | Send from Android's share sheet, or choose/drop a file in the Mac window or menu bar panel. |
-| Move something you copied | Sync your clipboard in the Android app or with the **Sync Clip** Quick Settings tile. |
+| Move something you copied | Tap **Sync** on the phone’s notification card to send or receive clipboard content. The Android app and **Sync Clip** Quick Settings tile are also available. |
 | Reply to a message notification from your Mac | Mirror WhatsApp, Telegram, or Messages notifications and send inline replies directly from Mac. |
 | Text from your computer | Browse your phone's SMS threads, view message bubbles, and compose new SMS messages from Mac. |
-| Catch an incoming phone call | Live incoming call banner on Mac with contact name / caller ID and missed call notifications. |
 | Save a link without losing your clipboard | Send it to the other device's text and link inbox. |
 | Get a paper document onto your Mac | Capture a photo or scan multiple pages into a PDF on your phone. You can request capture from your Mac. |
 
@@ -39,19 +38,23 @@ QR scanning uses Google Play services; you can also paste a pairing invitation l
 
 ## Downloads & current status
 
-[Download v1.4.0](https://github.com/HARSHITJAIS14/relay/releases/tag/v1.4.0), featuring SMS sync & compose, notification mirroring with inline replies, and incoming call alerts.
+[Download v1.6.0](https://github.com/HARSHITJAIS14/relay/releases/tag/v1.6.0), featuring file transfers, one-tap clipboard sync, SMS, and notification mirroring.
 
 | Platform | Package |
 | --- | --- |
-| macOS (Apple Silicon) | [Relay-v1.4.0.dmg](https://github.com/HARSHITJAIS14/relay/releases/download/v1.4.0/Relay-v1.4.0.dmg) |
-| Android | [Relay-v1.4.0.apk](https://github.com/HARSHITJAIS14/relay/releases/download/v1.4.0/Relay-v1.4.0.apk) |
+| macOS (Apple Silicon) | [Relay-v1.6.0.dmg](https://github.com/HARSHITJAIS14/relay/releases/download/v1.6.0/Relay-v1.6.0.dmg) |
+| Android | [Relay-v1.6.0.apk](https://github.com/HARSHITJAIS14/relay/releases/download/v1.6.0/Relay-v1.6.0.apk) |
 
-### What's new in v1.4.0
-- **SMS Companion:** Browse conversation threads from your Android phone on your Mac, view message bubble history, resolve contact names via Android Contacts, and compose & dispatch single/multipart SMS messages via your phone.
-- **Notification Mirroring & Inline Replies:** Mirror message notifications (WhatsApp, Telegram, Android Messages, Slack, etc.) straight to your Mac menu bar extra with support for inline `RemoteInput` direct replies.
-- **Call Companion (Stage A):** Real-time telephony callback monitoring on Android. Displays a live incoming call banner on Mac with caller ID / contact name, one-tap dismiss, and missed call notifications.
-- **Tabbed Native Mac UI:** Sleek segmented navigation tabs for **Transfer**, **Messages**, and **Notifications**, with floating call alerts and live unread counts.
-- **Automatic Rediscovery & Reconnection (from v1.2):** Zero-configuration mDNS / Bonjour discovery with strict mutual TLS verification. Transfers automatically resume from byte offset upon reconnection.
+### Included in v1.6.0
+
+- **Files:** send in either direction, with transfer progress, reconnection, and integrity checks.
+- **Clipboard:** one **Sync** action handles sending and receiving. No direction picker.
+- **SMS:** browse conversations and compose messages on Mac through your paired phone.
+- **Notifications:** mirror phone notifications and reply where the originating app supports inline replies.
+- **Native navigation:** Transfer, Messages, and Notifications on Mac.
+
+SMS requires Android permission and your phone’s cellular service; carrier charges may apply.
+Notification mirroring requires Android notification access. Inline replies depend on the source app.
 
 Relay is an early project. Current limits are part of the deal:
 
@@ -99,9 +102,10 @@ The APK is written to `apps/android/app/build/outputs/apk/debug/app-debug.apk`.
 
 ## Where Relay goes next
 
-The next priorities are reliable reconnect feedback, broader device testing, signed
-installation packages, and a short real-device demo. Notification mirroring and remote
-internet transfers are not current features.
+The next priorities are broader device testing, signed installation packages, and a
+short real-device demo. Remote internet transfers are not currently supported.
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the production and development workflow.
 
 Found a rough edge? [Open an issue](https://github.com/HARSHITJAIS14/relay/issues)
 with your OS versions, what you tried, and what happened. Keep personal clipboard contents

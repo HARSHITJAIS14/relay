@@ -122,29 +122,4 @@ final class V14ProtocolTests: XCTestCase {
         XCTAssertEqual(messages[1].body, "Hi Charlie!")
         XCTAssertEqual(messages[1].isFromMe, true)
     }
-
-    func testCallControlWireMessages() throws {
-        let answerMsg = WireMessage(type: "call.answer")
-        let rejectMsg = WireMessage(type: "call.reject")
-        let endMsg = WireMessage(type: "call.end")
-        let dialMsg = WireMessage(type: "call.dial", number: "+14155551234")
-        let declineMsg = WireMessage(type: "call.decline_with_sms", message: "In a meeting", number: "+14155551234")
-        let receiptMsg = WireMessage(type: "call.action_receipt", status: "ok")
-
-        let encodedDial = try JSONEncoder().encode(dialMsg)
-        let decodedDial = try JSONDecoder().decode(WireMessage.self, from: encodedDial)
-        XCTAssertEqual(decodedDial.type, "call.dial")
-        XCTAssertEqual(decodedDial.number, "+14155551234")
-
-        let encodedDecline = try JSONEncoder().encode(declineMsg)
-        let decodedDecline = try JSONDecoder().decode(WireMessage.self, from: encodedDecline)
-        XCTAssertEqual(decodedDecline.type, "call.decline_with_sms")
-        XCTAssertEqual(decodedDecline.number, "+14155551234")
-        XCTAssertEqual(decodedDecline.message, "In a meeting")
-
-        let encodedReceipt = try JSONEncoder().encode(receiptMsg)
-        let decodedReceipt = try JSONDecoder().decode(WireMessage.self, from: encodedReceipt)
-        XCTAssertEqual(decodedReceipt.type, "call.action_receipt")
-        XCTAssertEqual(decodedReceipt.status, "ok")
-    }
 }
