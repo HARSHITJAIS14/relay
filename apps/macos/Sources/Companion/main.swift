@@ -859,7 +859,67 @@ struct CompanionView: View {
     // MARK: - Call Status Banner
     @ViewBuilder
     private func callStatusBanner(call: ActiveCall) -> some View {
-        if call.state == "RINGING" {
+        if call.state == "DIALING" {
+            HStack(spacing: 12) {
+                Image(systemName: "phone.arrow.up.right.fill")
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundStyle(.white)
+                    .frame(width: 36, height: 36)
+                    .background(Color.blue, in: Circle())
+
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 6) {
+                        Text("DIALING OUTGOING CALL…")
+                            .font(.system(size: 9, weight: .bold))
+                            .tracking(0.8)
+                            .foregroundStyle(.blue)
+                        Text("•")
+                            .foregroundStyle(.secondary)
+                        Text("Calling phone network…")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                    }
+                    Text(call.callerName)
+                        .font(.headline)
+                    if !call.number.isEmpty && call.number != call.callerName {
+                        Text(call.number)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                Spacer()
+
+                // Cancel Outgoing Call Button
+                Button {
+                    server.endCall()
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "phone.down.fill")
+                        Text("Cancel")
+                    }
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(Capsule().fill(Color.red))
+                }
+                .buttonStyle(.plain)
+
+                Button {
+                    server.dismissCall()
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(.secondary)
+                        .padding(4)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(12)
+            .background(RoundedRectangle(cornerRadius: 12).fill(Color.blue.opacity(0.08)))
+            .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.blue.opacity(0.25), lineWidth: 1))
+        } else if call.state == "RINGING" {
             HStack(spacing: 12) {
                 Image(systemName: "phone.fill")
                     .font(.system(size: 16, weight: .bold))
@@ -1087,6 +1147,16 @@ struct CompanionView: View {
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
                     .background(Capsule().fill(Color.red))
+                }
+                .buttonStyle(.plain)
+
+                Button {
+                    server.dismissCall()
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(.secondary)
+                        .padding(4)
                 }
                 .buttonStyle(.plain)
             }

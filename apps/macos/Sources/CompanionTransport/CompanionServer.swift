@@ -588,8 +588,8 @@ public final class CompanionServer: ObservableObject {
         let trimmed = number.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         queueCommand(WireMessage(type: "call.dial", number: trimmed))
-        activeCall = ActiveCall(callId: UUID().uuidString.lowercased(), number: trimmed, callerName: trimmed, state: "OFFHOOK", timestamp: Int64(Date().timeIntervalSince1970 * 1000))
-        if routeToMacAudio || BluetoothHandsFreeController.shared.isBluetoothPaired {
+        activeCall = ActiveCall(callId: UUID().uuidString.lowercased(), number: trimmed, callerName: trimmed, state: "DIALING", timestamp: Int64(Date().timeIntervalSince1970 * 1000))
+        if routeToMacAudio && BluetoothHandsFreeController.shared.isBluetoothPaired {
             BluetoothHandsFreeController.shared.routeAudioToMac()
         }
     }
