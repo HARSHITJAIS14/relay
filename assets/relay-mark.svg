@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 36 36" role="img" aria-labelledby="title">
+  <title id="title">Relay</title>
+  <rect width="36" height="36" rx="10" fill="#245C50"/>
+  <path d="M12 26V10M7 15L12 10L17 15M24 10V26M19 21L24 26L29 21" fill="none" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

@@ -130,11 +130,19 @@ struct CompanionView: View {
             VStack(alignment: .leading, spacing: 16) {
                 // Header Bar
                 HStack(spacing: 10) {
-                    Image(systemName: "arrow.up.arrow.down")
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundStyle(.white)
-                        .frame(width: 36, height: 36)
-                        .background(relayGreen, in: RoundedRectangle(cornerRadius: 10))
+                    if let path = Bundle.main.path(forResource: "RelayMark", ofType: "png"),
+                       let mark = NSImage(contentsOfFile: path) {
+                        Image(nsImage: mark)
+                            .resizable()
+                            .frame(width: 36, height: 36)
+                            .accessibilityHidden(true)
+                    } else {
+                        Image(systemName: "arrow.up.arrow.down")
+                            .font(.system(size: 17, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .frame(width: 36, height: 36)
+                            .background(relayGreen, in: RoundedRectangle(cornerRadius: 10))
+                    }
                     Text("Relay")
                         .font(.system(size: 24, weight: .semibold, design: .rounded))
                     Spacer()

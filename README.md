@@ -8,7 +8,7 @@ Relay brings your Android into your Mac workflow. Send a file, grab a clipboard,
 reply to SMS, and see your phone’s notifications on your Mac.
 Your devices talk directly over local Wi-Fi.
 
-[Download v1.6.2](https://github.com/HARSHITJAIS14/relay/releases/tag/v1.6.2) · [Get started](#get-started) · [Build from source](#build-from-source)
+[Download v1.6.3](https://github.com/HARSHITJAIS14/relay/releases/tag/v1.6.3) · [Get started](#get-started) · [Build from source](#build-from-source)
 
 </div>
 
@@ -38,14 +38,17 @@ QR scanning uses Google Play services; you can also paste a pairing invitation l
 
 ## Downloads & current status
 
-[Download v1.6.2](https://github.com/HARSHITJAIS14/relay/releases/tag/v1.6.2), featuring file transfers, one-tap clipboard sync, SMS, and notification mirroring.
+[Download v1.6.3](https://github.com/HARSHITJAIS14/relay/releases/tag/v1.6.3), featuring file transfers, one-tap clipboard sync, SMS, and notification mirroring.
 
 | Platform | Package |
 | --- | --- |
-| macOS (Apple Silicon) | [Relay-v1.6.2.dmg](https://github.com/HARSHITJAIS14/relay/releases/download/v1.6.2/Relay-v1.6.2.dmg) |
-| Android | [Relay-v1.6.2.apk](https://github.com/HARSHITJAIS14/relay/releases/download/v1.6.2/Relay-v1.6.2.apk) |
+| macOS (Apple Silicon) | [Relay-v1.6.3.dmg](https://github.com/HARSHITJAIS14/relay/releases/download/v1.6.3/Relay-v1.6.3.dmg) |
+| Android | [Relay-v1.6.3.apk](https://github.com/HARSHITJAIS14/relay/releases/download/v1.6.3/Relay-v1.6.3.apk) |
 
-### Included in v1.6.2
+### Included in v1.6.3
+
+The app icons now match Relay’s green brand mark on Mac and Android, including
+Android adaptive/themed launcher icons and the Mac menu bar.
 
 - **Files:** send in either direction, with preparation feedback, live percentage and byte counts, reconnection, and integrity checks.
 - **Clipboard:** one **Sync** action handles sending and receiving. No direction picker.

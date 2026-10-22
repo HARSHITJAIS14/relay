@@ -29,3 +29,6 @@ Never commit or attach its contents to a release. `tools/setup_dev_signing.py` i
 The packager temporarily opens that build-only keychain for signing and restores the original
 Keychain search list afterward. It does not install a trusted root. For public distribution,
 configure an Apple Developer ID identity and notarization separately.
+
+Icon artwork comes from `assets/relay-mark.svg`. Run `swift tools/generate_icons.swift`
+on macOS to regenerate Mac, Android, header and menu-bar resources, then check the preview.
