@@ -6,6 +6,8 @@ import android.content.pm.PackageManager
 import android.media.AudioManager
 import android.net.Uri
 import android.os.Build
+import android.os.Bundle
+import android.os.PowerManager
 import android.telecom.TelecomManager
 import android.util.Log
 import android.view.KeyEvent
@@ -121,23 +123,57 @@ class RelayCallController(private val context: Context) {
 
     /**
      * Dials a destination phone number.
-     * Uses ACTION_CALL if CALL_PHONE permission is granted, otherwise ACTION_DIAL.
+     * Uses TelecomManager.placeCall when available (bypasses Android 14+ background launch limits
+     * and directly commands Telecom to place the call and display the in-call UI), falling back to
+     * ACTION_CALL / ACTION_DIAL.
      */
     fun dialNumber(number: String): Boolean {
         val trimmed = number.trim()
         if (trimmed.isEmpty()) return false
         Log.i(TAG, "Dialing number: $trimmed")
 
-        return try {
-            val uri = Uri.parse("tel:${Uri.encode(trimmed)}")
-            val hasCallPermission = context.checkSelfPermission(android.Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED
+        // 1. Wake the screen if locked/sleeping so the in-call UI is immediately presented
+        try {
+            val pm = context.getSystemService(Context.POWER_SERVICE) as? PowerManager
+            val wakeLock = pm?.newWakeLock(
+                PowerManager.SCREEN_BRIGHT_WAKE_LOCK or
+                PowerManager.ACQUIRE_CAUSES_WAKEUP or
+                PowerManager.ON_AFTER_RELEASE,
+                "dev.companion.android:CallWakeLock"
+            )
+            wakeLock?.acquire(3000)
+        } catch (e: Exception) {
+            Log.w(TAG, "WakeLock acquisition failed", e)
+        }
 
+        val uri = Uri.parse("tel:${Uri.encode(trimmed)}")
+        val hasCallPermission = context.checkSelfPermission(android.Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED
+
+        // 2. Direct TelecomManager call placement (system service, displays InCallActivity without BAL blocks)
+        if (hasCallPermission && telecomManager != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            try {
+                val extras = Bundle().apply {
+                    val defaultAccount = telecomManager.getDefaultOutgoingPhoneAccount(uri.scheme)
+                    if (defaultAccount != null) {
+                        putParcelable(TelecomManager.EXTRA_PHONE_ACCOUNT_HANDLE, defaultAccount)
+                    }
+                }
+                Log.i(TAG, "Placing direct call via TelecomManager.placeCall to $trimmed")
+                telecomManager.placeCall(uri, extras)
+                return true
+            } catch (e: Exception) {
+                Log.w(TAG, "TelecomManager.placeCall threw exception, attempting Intent fallback", e)
+            }
+        }
+
+        // 3. Fallback Intent
+        return try {
             val intent = if (hasCallPermission) {
                 Intent(Intent.ACTION_CALL, uri)
             } else {
                 Intent(Intent.ACTION_DIAL, uri)
             }.apply {
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
             }
 
             context.startActivity(intent)

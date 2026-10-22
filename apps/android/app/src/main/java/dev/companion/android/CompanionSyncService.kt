@@ -18,6 +18,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 class CompanionSyncService : Service() {
     private val executor = Executors.newSingleThreadExecutor()
+    private val commandExecutor = Executors.newSingleThreadExecutor()
     private val handler = Handler(Looper.getMainLooper())
     private val running = AtomicBoolean(true)
     private lateinit var client: PeerClient
@@ -69,6 +70,7 @@ class CompanionSyncService : Service() {
         coordinator.addListener(stateListener)
         coordinator.triggerRefresh()
         startSyncLoop()
+        startCommandLoop()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -86,6 +88,7 @@ class CompanionSyncService : Service() {
             coordinator.removeListener(stateListener)
         }
         executor.shutdownNow()
+        commandExecutor.shutdownNow()
         super.onDestroy()
     }
 
@@ -126,7 +129,6 @@ class CompanionSyncService : Service() {
                         if (captureReq != null) {
                             showCaptureNotification(captureReq.id, captureReq.mode)
                         }
-                        client.pollCompanionCommands()
                         delayMs = 2000L
                     } else if (client.paired) {
                         coordinator.triggerRefresh()
@@ -137,6 +139,30 @@ class CompanionSyncService : Service() {
                 } catch (e: Exception) {
                     coordinator.triggerRefresh()
                     delayMs = 4000L
+                }
+
+                try {
+                    Thread.sleep(delayMs)
+                } catch (e: InterruptedException) {
+                    break
+                }
+            }
+        }
+    }
+
+    private fun startCommandLoop() {
+        commandExecutor.execute {
+            while (running.get()) {
+                var delayMs = 500L
+                try {
+                    if (coordinator.isConnected()) {
+                        client.pollCompanionCommands()
+                        delayMs = 500L
+                    } else {
+                        delayMs = 2500L
+                    }
+                } catch (e: Exception) {
+                    delayMs = 2500L
                 }
 
                 try {
