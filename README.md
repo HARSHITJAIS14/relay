@@ -8,7 +8,7 @@ Relay brings your Android into your Mac workflow. Send a file, grab a clipboard,
 reply to SMS, and see your phone’s notifications on your Mac.
 Your devices talk directly over local Wi-Fi.
 
-[Download v1.6.3](https://github.com/HARSHITJAIS14/relay/releases/tag/v1.6.3) · [Get started](#get-started) · [Build from source](#build-from-source)
+[Download v1.6.4](https://github.com/HARSHITJAIS14/relay/releases/tag/v1.6.4) · [Get started](#get-started) · [Build from source](#build-from-source)
 
 </div>
 
@@ -38,16 +38,22 @@ QR scanning uses Google Play services; you can also paste a pairing invitation l
 
 ## Downloads & current status
 
-[Download v1.6.3](https://github.com/HARSHITJAIS14/relay/releases/tag/v1.6.3), featuring file transfers, one-tap clipboard sync, SMS, and notification mirroring.
+[Download v1.6.4](https://github.com/HARSHITJAIS14/relay/releases/tag/v1.6.4), featuring file transfers, one-tap clipboard sync, SMS, and notification mirroring.
 
 | Platform | Package |
 | --- | --- |
 | macOS (Apple Silicon) | [Relay-v1.6.3.dmg](https://github.com/HARSHITJAIS14/relay/releases/download/v1.6.3/Relay-v1.6.3.dmg) |
-| Android | [Relay-v1.6.3.apk](https://github.com/HARSHITJAIS14/relay/releases/download/v1.6.3/Relay-v1.6.3.apk) |
+| Android | [Relay-v1.6.4.apk](https://github.com/HARSHITJAIS14/relay/releases/download/v1.6.4/Relay-v1.6.4.apk) |
 
-### Included in v1.6.3
+### Included in v1.6.4
 
-The app icons now match Relay’s green brand mark on Mac and Android, including
+Android now uses a non-debug release build signed with a permanent release key. The Mac package remains v1.6.3.
+
+**Upgrading Android from v1.6.3 or earlier:** the signing certificate has changed. A normal update over the old debug-signed installation will fail. Uninstall the old app, install v1.6.4, and pair again; uninstalling clears app settings and pairing data. Save any needed app data first. Future release builds will retain this key.
+
+**Play Protect:** release signing does not guarantee approval. The fresh-download installation warning remains unresolved until verified on a device with protection enabled.
+
+The app icons match Relay’s green brand mark on Mac and Android, including
 Android adaptive/themed launcher icons and the Mac menu bar.
 
 - **Files:** send in either direction, with preparation feedback, live percentage and byte counts, reconnection, and integrity checks.
@@ -65,7 +71,7 @@ Relay is an early project. Current limits are part of the deal:
 - **Local network required.** Guest Wi-Fi, client isolation, firewalls, and sleeping devices can prevent connections.
 - **Clipboard access depends on Android.** Use the app, share sheet, or Quick Settings tile when background clipboard access is restricted. Applying Mac clipboard updates automatically is an optional Android setting.
 - **Build targets:** macOS 13+ and Android 10+. Existing device testing covers an Apple Silicon Mac and an Android 16 phone; that does not establish compatibility with every supported OS or Intel Macs.
-- **Development distribution:** the Mac preview uses a persistent local signing identity, and the Android build below produces a debug APK. These are not notarized Mac or Play Store releases.
+- **Distribution:** the Android download is release-signed, but is not a Google Play release. The Mac preview uses a persistent local signing identity without Apple notarization.
 
 ## Secure connection approval on Mac
 
@@ -113,7 +119,20 @@ cd apps/android
 ./gradlew :core:test :app:assembleDebug
 ```
 
-The APK is written to `apps/android/app/build/outputs/apk/debug/app-debug.apk`.
+The debug APK is written to `apps/android/app/build/outputs/apk/debug/app-debug.apk`.
+
+For a distribution build, create a permanent private signing key once from the repository root:
+
+```sh
+python3 tools/setup_android_signing.py
+cd apps/android
+./gradlew :core:test :app:assembleRelease :app:lintRelease
+```
+
+The signed APK is `apps/android/app/build/outputs/apk/release/app-release.apk`.
+Securely back up `.tooling/android-signing/` (keystore and password properties) outside this
+checkout. Never publish or commit it. Losing or replacing the key breaks update continuity.
+Release packaging fails if signing configuration is absent.
 
 ## Where Relay goes next
 

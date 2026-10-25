@@ -20,8 +20,14 @@ Before a release:
 5. Build packages from a clean production commit and verify their versions and signatures.
 6. Tag that commit, publish checksums alongside both packages, and mark the release latest.
 
-The current packages use development signing. Preserve the Android signing key for upgrade
-compatibility. Developer ID signing/notarization and store distribution require separate setup.
+Android v1.6.4 introduces permanent release signing and a non-debug build. Run
+`python3 tools/setup_android_signing.py` once, then `:app:assembleRelease :app:lintRelease`.
+The script preserves existing keys and refuses partial signing state. Securely back up the
+ignored `.tooling/android-signing/` directory outside the checkout; never attach its contents
+to a release. Existing debug-signed users must uninstall and pair again at this transition.
+Retain the same release key for subsequent updates. Verify APK signature and certificate,
+package/version metadata, and absence of the debuggable flag before publication.
+Developer ID signing/notarization and Google Play distribution require separate setup.
 
 Mac preview signing uses a persistent certificate in `.tooling/macos-signing/`. Retain and
 securely back up this ignored folder; it contains a private signing key and generated password.

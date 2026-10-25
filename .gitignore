@@ -17,3 +17,8 @@ implementation.md
 PLAN.md
 ROADMAP.md
 docs/
+
+# Private signing material
+*.jks
+*.keystore
+*.p12
